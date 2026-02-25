@@ -1,0 +1,11 @@
+{
+  "evidence_id": "E1",
+  "doc_id": "insp-2024-17",
+  "doc_type": "inspection_report",
+  "asset_type": "text_chunk",
+  "chunk_id": "chunk-17-042",
+  "page": 12,
+  "section": "Corrosion Thresholds",
+  "snippet": "The corrosion threshold for chloride exposure is triggered at 0.35% by weight under the tested conditions."
+}
+

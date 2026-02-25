@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schemas/query-request.schema.json",
+  "title": "QueryRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "query"
+  ],
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "description": "User query text."
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "doc_ids"
+      ],
+      "properties": {
+        "doc_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "scope_reason": {
+          "type": "string",
+          "enum": [
+            "explicit_doc_id",
+            "ui_selection"
+          ]
+        }
+      },
+      "description": "Explicit query scope. If omitted, retrieval must be unscoped across all indexed documents."
+    },
+    "modality_hints": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "text_chunk",
+          "caption",
+          "figure_image",
+          "table_image",
+          "diagram",
+          "chart_image",
+          "embedded_image"
+        ]
+      },
+      "description": "Advisory modality hints only."
+    },
+    "debug": {
+      "type": "boolean",
+      "default": false
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

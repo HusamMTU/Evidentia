@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schemas/query-response.schema.json",
+  "title": "QueryResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "answer",
+    "citations",
+    "used_evidence_ids",
+    "limitations",
+    "evidence"
+  ],
+  "properties": {
+    "answer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "statement",
+          "evidence_ids"
+        ],
+        "properties": {
+          "statement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^E[1-9][0-9]*$"
+            }
+          }
+        }
+      }
+    },
+    "used_evidence_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^E[1-9][0-9]*$"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "./evidence-item.schema.json"
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope_mode": {
+          "type": "string",
+          "enum": [
+            "unscoped",
+            "scoped"
+          ]
+        },
+        "scoped_doc_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "bundle_type": {
+          "type": "string",
+          "enum": [
+            "text-only",
+            "visual-led",
+            "table-led",
+            "cross-document-comparison"
+          ]
+        },
+        "docs_contributing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "insufficient_evidence": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

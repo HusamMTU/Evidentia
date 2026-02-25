@@ -1,0 +1,48 @@
+{
+  "answer": "The inspection reports disagree on the corrosion threshold, with one report listing a lower trigger value than the other.",
+  "citations": [
+    {
+      "statement": "The reports disagree on the corrosion threshold.",
+      "evidence_ids": [
+        "E1",
+        "E2"
+      ]
+    }
+  ],
+  "used_evidence_ids": [
+    "E1",
+    "E2"
+  ],
+  "limitations": [
+    "The reports may use different test conditions."
+  ],
+  "evidence": [
+    {
+      "evidence_id": "E1",
+      "doc_id": "insp-2024-17",
+      "doc_type": "inspection_report",
+      "asset_type": "text_chunk",
+      "chunk_id": "chunk-17-042",
+      "page": 12,
+      "section": "Corrosion Thresholds",
+      "snippet": "The corrosion threshold for chloride exposure is triggered at 0.35% by weight under the tested conditions."
+    },
+    {
+      "evidence_id": "E2",
+      "doc_id": "insp-2024-22",
+      "doc_type": "inspection_report",
+      "asset_type": "table_image",
+      "asset_id": "asset-22-011",
+      "asset_s3_key": "documents-assets/insp-2024-22/asset-22-011.png",
+      "page": 9,
+      "caption": "Table summarizing corrosion trigger thresholds by exposure type.",
+      "presigned_url": "https://example.com/presigned/documents-assets/insp-2024-22/asset-22-011.png?sig=abc123"
+    }
+  ],
+  "meta": {
+    "scope_mode": "unscoped",
+    "bundle_type": "cross-document-comparison",
+    "docs_contributing": 2,
+    "insufficient_evidence": false
+  }
+}

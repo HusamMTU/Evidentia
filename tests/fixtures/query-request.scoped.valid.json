@@ -1,0 +1,15 @@
+{
+  "query": "What does the corrosion threshold table report for chloride exposure?",
+  "scope": {
+    "doc_ids": [
+      "insp-2024-17"
+    ],
+    "scope_reason": "ui_selection"
+  },
+  "modality_hints": [
+    "table_image",
+    "text_chunk"
+  ],
+  "request_id": "req-0002"
+}
+

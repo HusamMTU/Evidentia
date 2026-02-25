@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schemas/evidence-item.schema.json",
+  "title": "EvidenceItem",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidence_id",
+    "doc_id",
+    "asset_type"
+  ],
+  "properties": {
+    "evidence_id": {
+      "type": "string",
+      "pattern": "^E[1-9][0-9]*$"
+    },
+    "doc_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "doc_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "text_chunk",
+        "caption",
+        "figure_image",
+        "table_image",
+        "diagram",
+        "chart_image",
+        "embedded_image"
+      ]
+    },
+    "asset_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "chunk_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "asset_s3_key": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "page": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "section": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "snippet": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "caption": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "presigned_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "chunk_id"
+      ],
+      "properties": {
+        "chunk_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "asset_id"
+      ],
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "asset_type": {
+            "const": "text_chunk"
+          }
+        },
+        "required": [
+          "asset_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "chunk_id",
+          "snippet"
+        ],
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "snippet": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "asset_type": {
+            "enum": [
+              "figure_image",
+              "table_image",
+              "diagram",
+              "chart_image",
+              "embedded_image"
+            ]
+          }
+        },
+        "required": [
+          "asset_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "asset_id",
+          "asset_s3_key"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset_s3_key": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "asset_type": {
+            "const": "caption"
+          }
+        },
+        "required": [
+          "asset_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "asset_id"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "answer": "The inspection reports disagree on the corrosion threshold, with one report listing a lower trigger value than the other.",
+  "citations": [
+    {
+      "statement": "The reports disagree on the corrosion threshold.",
+      "evidence_ids": [
+        "E1",
+        "E2"
+      ]
+    },
+    {
+      "statement": "One report lists a lower trigger value than the other.",
+      "evidence_ids": [
+        "E1",
+        "E2"
+      ]
+    }
+  ],
+  "used_evidence_ids": [
+    "E1",
+    "E2"
+  ],
+  "limitations": [
+    "The documents use different measurement contexts, which may affect direct comparability."
+  ]
+}
+
