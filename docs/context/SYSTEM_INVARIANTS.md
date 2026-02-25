@@ -4,7 +4,7 @@ This document defines the non-negotiable rules the system must satisfy at all ti
 
 ## Purpose
 
-- Prevent regressions against the core guarantees in `SYSTEM.md`
+- Prevent regressions against the core guarantees in `docs/context/SYSTEM.md`
 - Keep multi-document behavior first-class
 - Make correctness testable across ingestion, retrieval, evidence assembly, and answer generation
 

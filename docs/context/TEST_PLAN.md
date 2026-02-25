@@ -1,6 +1,6 @@
 # Test Plan
 
-This plan maps `SYSTEM_INVARIANTS.md` to executable tests for the MVP. It is organized by test layer so the team can catch regressions early and isolate failures quickly.
+This plan maps `docs/context/SYSTEM_INVARIANTS.md` to executable tests for the MVP. It is organized by test layer so the team can catch regressions early and isolate failures quickly.
 
 ## Goals
 
@@ -407,6 +407,6 @@ Use this for early demos and pre-release verification:
 
 - Every new bug fix should add at least one regression test at the lowest effective layer.
 - Any change to retrieval defaults, evidence assembly, or response schema must update:
-  - `SYSTEM_INVARIANTS.md`
+  - `docs/context/SYSTEM_INVARIANTS.md`
   - this test plan
   - corresponding automated tests

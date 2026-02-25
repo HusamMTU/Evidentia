@@ -1,6 +1,6 @@
 # Contracts
 
-This document defines the canonical request/response and evidence contracts for the MVP described in `SYSTEM.md`, `ARCHITECTURE.md`, and `SYSTEM_INVARIANTS.md`.
+This document defines the canonical request/response and evidence contracts for the MVP described in `docs/context/SYSTEM.md`, `docs/context/ARCHITECTURE.md`, and `docs/context/SYSTEM_INVARIANTS.md`.
 
 ## Scope
 

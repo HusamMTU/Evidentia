@@ -1,6 +1,6 @@
 # Development Plan
 
-This plan turns `SYSTEM.md` and `ARCHITECTURE.md` into a phased build sequence for an MVP of the multimodal, multi-document grounded QA system.
+This plan turns `docs/context/SYSTEM.md` and `docs/context/ARCHITECTURE.md` into a phased build sequence for an MVP of the multimodal, multi-document grounded QA system.
 
 ## Planning Principles
 
@@ -55,7 +55,7 @@ Goal: Freeze the system contracts that all components depend on.
 
 ### Deliverables
 
-- `docs/contracts.md` (schemas + invariants)
+- `docs/context/contracts.md` (schemas + invariants)
 - JSON schemas for request/response (or typed models if codebase is typed)
 - Example payloads for text-only and multimodal queries
 

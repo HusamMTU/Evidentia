@@ -182,4 +182,4 @@ No architectural change should be required to support cross-document QA.
 If you want next-level refinement, I can now:
 
 * Add a formal **System Invariants** section (very useful for guiding autonomous coding agents).
-* Or create a **DEVELOPMENT_PLAN.md** with phased milestones aligned to this architecture.
+* Or create a **docs/context/DEVELOPMENT_PLAN.md** with phased milestones aligned to this architecture.
