@@ -3,12 +3,17 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 
 # Virtual environments
 .venv/
 venv/
+
+# CDK
+cdk.out/
+infra/cdk/cdk.out/
 
 # macOS
 .DS_Store
@@ -19,3 +24,6 @@ venv/
 
 # Logs
 *.log
+
+# Env files
+.env
