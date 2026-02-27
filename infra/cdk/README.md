@@ -82,6 +82,24 @@ cdk deploy --app ".venv/bin/python app.py" -c stage=dev
 
 Populate `.env.example` values from CloudFormation outputs after deploy (bucket names, role ARNs).
 
+## Destroy Stack
+
+From `infra/cdk`:
+
+```bash
+. .venv/bin/activate
+set -a; source ../../.env; set +a
+
+cdk destroy "EvidentiaFoundation-dev" --app ".venv/bin/python app.py" --force
+```
+
+For a non-`dev` stage, replace the stack name with `EvidentiaFoundation-<stage>`.
+
+Important:
+
+- The stack uses `RETAIN` policies for storage resources, so destroy may leave S3/S3 Vectors resources behind by design.
+- Use the cleanup scripts in this README when you need to remove retained buckets/vector buckets after stack destroy.
+
 If your `.env` file uses plain `KEY=value` lines (no `export` prefix), use:
 
 ```bash
