@@ -2,6 +2,20 @@
 
 This plan turns `docs/context/SYSTEM.md` and `docs/context/ARCHITECTURE.md` into a phased build sequence for an MVP of the multimodal, multi-document grounded QA system.
 
+## Current Implementation Status (as of 2026-02-27)
+
+- Phase 0 (Contracts and Invariants): **Completed in repo**
+  - Schemas: `schemas/query-request.schema.json`, `schemas/model-answer.schema.json`, `schemas/evidence-item.schema.json`, `schemas/query-response.schema.json`
+  - Validation layer: `validation/`
+  - Contract fixtures and tests: `tests/fixtures/`, `tests/test_contract_fixtures.py`
+- Phase 1 (Cloud Foundation and Security): **In progress, foundation deployed**
+  - CDK app and stack: `infra/cdk/app.py`, `infra/cdk/evidentia_cdk/foundation_stack.py`
+  - Infra docs and runbook: `infra/cdk/README.md`
+  - Operational cleanup scripts for repeated deployment attempts:
+    - `scripts/cleanup_redundant_s3_buckets.sh` (classic S3)
+    - `scripts/cleanup_redundant_s3vectors.sh` (S3 Vectors)
+- Phases 2-7: **Not implemented yet**
+
 ## Planning Principles
 
 - Build deterministic retrieval and evidence assembly before LLM answering.
@@ -61,6 +75,7 @@ Goal: Freeze the system contracts that all components depend on.
 
 ### Gate (must pass before Phase 1)
 
+- Status: **Passed** (schemas + fixtures + contract validation tests are in repo)
 - Team can answer "what is the canonical evidence object?" without ambiguity.
 - All metadata fields and constraints are documented (including size/key count limits).
 

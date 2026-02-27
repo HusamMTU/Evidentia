@@ -14,3 +14,8 @@ Notes:
 - `query-response.valid.json` embeds evidence items and is the main end-to-end contract fixture.
 - Citation integrity (model answer IDs matching selected evidence IDs) is validated at runtime and also holds for the provided fixtures.
 
+Run fixture validation:
+
+```bash
+python -m unittest tests/test_contract_fixtures.py
+```

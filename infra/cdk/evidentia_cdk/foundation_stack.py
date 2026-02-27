@@ -4,12 +4,14 @@ from dataclasses import dataclass
 
 from aws_cdk import (
     CfnOutput,
+    CfnDeletionPolicy,
     Duration,
     RemovalPolicy,
     Stack,
     aws_bedrock as bedrock,
     aws_iam as iam,
     aws_s3 as s3,
+    aws_s3vectors as s3vectors,
 )
 from constructs import Construct
 
@@ -30,6 +32,9 @@ class FoundationStackProps:
     knowledge_base_data_source_name: str | None = None
     embedding_model_arn: str | None = None
     s3_vectors_index_name: str | None = None
+    s3_vectors_data_type: str = "float32"
+    s3_vectors_dimension: int = 1024
+    s3_vectors_distance_metric: str = "cosine"
     advanced_parsing_strategy: str | None = None
     advanced_parsing_model_arn: str | None = None
     advanced_parsing_modality: str | None = None
@@ -58,6 +63,9 @@ class EvidentiaFoundationStack(Stack):
         knowledge_base_data_source_name: str | None = None,
         embedding_model_arn: str | None = None,
         s3_vectors_index_name: str | None = None,
+        s3_vectors_data_type: str = "float32",
+        s3_vectors_dimension: int = 1024,
+        s3_vectors_distance_metric: str = "cosine",
         advanced_parsing_strategy: str | None = None,
         advanced_parsing_model_arn: str | None = None,
         advanced_parsing_modality: str | None = None,
@@ -76,6 +84,9 @@ class EvidentiaFoundationStack(Stack):
             knowledge_base_data_source_name=knowledge_base_data_source_name,
             embedding_model_arn=embedding_model_arn,
             s3_vectors_index_name=s3_vectors_index_name,
+            s3_vectors_data_type=s3_vectors_data_type,
+            s3_vectors_dimension=s3_vectors_dimension,
+            s3_vectors_distance_metric=s3_vectors_distance_metric,
             advanced_parsing_strategy=advanced_parsing_strategy,
             advanced_parsing_model_arn=advanced_parsing_model_arn,
             advanced_parsing_modality=advanced_parsing_modality,
@@ -91,16 +102,20 @@ class EvidentiaFoundationStack(Stack):
             explicit_name=props.assets_bucket_name,
             auto_delete_objects=False,
         )
-        vectors_bucket = self._create_bucket(
-            "S3VectorsBucket",
-            explicit_name=props.vectors_bucket_name,
-            auto_delete_objects=False,
+        vectors_bucket, vectors_index = self._create_s3_vectors_resources(
+            stage_name=props.stage_name,
+            vector_bucket_name=props.vectors_bucket_name,
+            index_name=props.s3_vectors_index_name,
+            data_type=props.s3_vectors_data_type,
+            dimension=props.s3_vectors_dimension,
+            distance_metric=props.s3_vectors_distance_metric,
         )
 
         kb_role = self._create_kb_role(
             raw_bucket=raw_bucket,
             assets_bucket=assets_bucket,
             vectors_bucket=vectors_bucket,
+            vectors_index=vectors_index,
             embedding_model_arn=props.embedding_model_arn,
         )
         api_role = self._create_api_role(
@@ -114,12 +129,13 @@ class EvidentiaFoundationStack(Stack):
             kb_resource, data_source_resource = self._create_bedrock_knowledge_base_resources(
                 stage_name=props.stage_name,
                 raw_bucket=raw_bucket,
+                assets_bucket=assets_bucket,
                 vectors_bucket=vectors_bucket,
+                vectors_index=vectors_index,
                 kb_role=kb_role,
                 knowledge_base_name=props.knowledge_base_name,
                 knowledge_base_data_source_name=props.knowledge_base_data_source_name,
                 embedding_model_arn=props.embedding_model_arn,
-                s3_vectors_index_name=props.s3_vectors_index_name,
                 advanced_parsing_strategy=props.advanced_parsing_strategy,
                 advanced_parsing_model_arn=props.advanced_parsing_model_arn,
                 advanced_parsing_modality=props.advanced_parsing_modality,
@@ -129,12 +145,47 @@ class EvidentiaFoundationStack(Stack):
             raw_bucket=raw_bucket,
             assets_bucket=assets_bucket,
             vectors_bucket=vectors_bucket,
+            vectors_index=vectors_index,
             kb_role=kb_role,
             api_role=api_role,
             stage_name=props.stage_name,
             kb_resource=kb_resource,
             data_source_resource=data_source_resource,
         )
+
+    def _create_s3_vectors_resources(
+        self,
+        *,
+        stage_name: str,
+        vector_bucket_name: str | None,
+        index_name: str | None,
+        data_type: str,
+        dimension: int,
+        distance_metric: str,
+    ) -> tuple[s3vectors.CfnVectorBucket, s3vectors.CfnIndex]:
+        vector_bucket = s3vectors.CfnVectorBucket(
+            self,
+            "S3VectorsBucket",
+            vector_bucket_name=vector_bucket_name,
+        )
+        vector_bucket.cfn_options.deletion_policy = CfnDeletionPolicy.RETAIN
+        vector_bucket.cfn_options.update_replace_policy = CfnDeletionPolicy.RETAIN
+
+        effective_index_name = index_name or f"evidentia-{stage_name}-index"
+        vector_index = s3vectors.CfnIndex(
+            self,
+            "S3VectorsIndex",
+            data_type=data_type.lower(),
+            dimension=dimension,
+            distance_metric=distance_metric.lower(),
+            index_name=effective_index_name,
+            vector_bucket_arn=vector_bucket.attr_vector_bucket_arn,
+        )
+        vector_index.cfn_options.deletion_policy = CfnDeletionPolicy.RETAIN
+        vector_index.cfn_options.update_replace_policy = CfnDeletionPolicy.RETAIN
+        vector_index.add_dependency(vector_bucket)
+
+        return vector_bucket, vector_index
 
     def _create_bucket(
         self,
@@ -166,7 +217,8 @@ class EvidentiaFoundationStack(Stack):
         *,
         raw_bucket: s3.Bucket,
         assets_bucket: s3.Bucket,
-        vectors_bucket: s3.Bucket,
+        vectors_bucket: s3vectors.CfnVectorBucket,
+        vectors_index: s3vectors.CfnIndex,
         embedding_model_arn: str | None,
     ) -> iam.Role:
         role = iam.Role(
@@ -178,7 +230,6 @@ class EvidentiaFoundationStack(Stack):
 
         raw_bucket.grant_read(role)
         assets_bucket.grant_read_write(role)
-        vectors_bucket.grant_read_write(role)
 
         role.add_to_policy(
             iam.PolicyStatement(
@@ -187,14 +238,6 @@ class EvidentiaFoundationStack(Stack):
                 resources=[raw_bucket.bucket_arn, assets_bucket.bucket_arn],
             )
         )
-        role.add_to_policy(
-            iam.PolicyStatement(
-                sid="ListVectorsBucket",
-                actions=["s3:ListBucket"],
-                resources=[vectors_bucket.bucket_arn],
-            )
-        )
-
         invoke_resources = [embedding_model_arn] if embedding_model_arn else ["*"]
         role.add_to_policy(
             iam.PolicyStatement(
@@ -226,9 +269,9 @@ class EvidentiaFoundationStack(Stack):
         )
         role.add_to_policy(
             iam.PolicyStatement(
-                sid="S3VectorsPermissionsPlaceholder",
+                sid="S3VectorsPermissions",
                 actions=["s3vectors:*"],
-                resources=["*"],
+                resources=[vectors_bucket.attr_vector_bucket_arn, vectors_index.attr_index_arn],
             )
         )
 
@@ -280,12 +323,13 @@ class EvidentiaFoundationStack(Stack):
         *,
         stage_name: str,
         raw_bucket: s3.Bucket,
-        vectors_bucket: s3.Bucket,
+        assets_bucket: s3.Bucket,
+        vectors_bucket: s3vectors.CfnVectorBucket,
+        vectors_index: s3vectors.CfnIndex,
         kb_role: iam.Role,
         knowledge_base_name: str | None,
         knowledge_base_data_source_name: str | None,
         embedding_model_arn: str | None,
-        s3_vectors_index_name: str | None,
         advanced_parsing_strategy: str | None,
         advanced_parsing_model_arn: str | None,
         advanced_parsing_modality: str | None,
@@ -295,14 +339,24 @@ class EvidentiaFoundationStack(Stack):
                 "enable_bedrock_kb=True requires embedding_model_arn "
                 "(context: embeddingModelArn or env: BEDROCK_EMBEDDING_MODEL_ARN)"
             )
-        if not s3_vectors_index_name:
-            raise ValueError(
-                "enable_bedrock_kb=True requires s3_vectors_index_name "
-                "(context: s3VectorsIndexName or env: BEDROCK_S3_VECTORS_INDEX_NAME)"
-            )
-
         kb_name = knowledge_base_name or f"evidentia-kb-{stage_name}"
         ds_name = knowledge_base_data_source_name or f"evidentia-raw-s3-{stage_name}"
+        parsing_strategy = (advanced_parsing_strategy or "").strip().upper()
+
+        vector_kb_config_kwargs: dict[str, object] = {"embedding_model_arn": embedding_model_arn}
+        if parsing_strategy:
+            vector_kb_config_kwargs["supplemental_data_storage_configuration"] = (
+                bedrock.CfnKnowledgeBase.SupplementalDataStorageConfigurationProperty(
+                    supplemental_data_storage_locations=[
+                        bedrock.CfnKnowledgeBase.SupplementalDataStorageLocationProperty(
+                            supplemental_data_storage_location_type="S3",
+                            s3_location=bedrock.CfnKnowledgeBase.S3LocationProperty(
+                                uri=f"s3://{assets_bucket.bucket_name}"
+                            ),
+                        )
+                    ]
+                )
+            )
 
         knowledge_base = bedrock.CfnKnowledgeBase(
             self,
@@ -313,17 +367,20 @@ class EvidentiaFoundationStack(Stack):
             knowledge_base_configuration=bedrock.CfnKnowledgeBase.KnowledgeBaseConfigurationProperty(
                 type="VECTOR",
                 vector_knowledge_base_configuration=bedrock.CfnKnowledgeBase.VectorKnowledgeBaseConfigurationProperty(
-                    embedding_model_arn=embedding_model_arn
+                    **vector_kb_config_kwargs
                 ),
             ),
             storage_configuration=bedrock.CfnKnowledgeBase.StorageConfigurationProperty(
                 type="S3_VECTORS",
                 s3_vectors_configuration=bedrock.CfnKnowledgeBase.S3VectorsConfigurationProperty(
-                    vector_bucket_arn=vectors_bucket.bucket_arn,
-                    index_name=s3_vectors_index_name,
+                    vector_bucket_arn=vectors_bucket.attr_vector_bucket_arn,
+                    index_arn=vectors_index.attr_index_arn,
                 ),
             ),
         )
+        kb_default_policy = kb_role.node.try_find_child("DefaultPolicy")
+        if kb_default_policy is not None:
+            knowledge_base.node.add_dependency(kb_default_policy)
 
         vector_ingestion_configuration = self._build_vector_ingestion_configuration(
             advanced_parsing_strategy=advanced_parsing_strategy,
@@ -349,6 +406,8 @@ class EvidentiaFoundationStack(Stack):
 
         data_source = bedrock.CfnDataSource(self, "BedrockKnowledgeBaseDataSource", **data_source_props)
         data_source.add_dependency(knowledge_base)
+        if kb_default_policy is not None:
+            data_source.node.add_dependency(kb_default_policy)
 
         return knowledge_base, data_source
 
@@ -378,9 +437,10 @@ class EvidentiaFoundationStack(Stack):
                 bedrock.CfnDataSource.BedrockFoundationModelConfigurationProperty(**fm_cfg_kwargs)
             )
         elif parsing_strategy == "BEDROCK_DATA_AUTOMATION":
-            bda_kwargs: dict[str, object] = {}
-            if advanced_parsing_modality:
-                bda_kwargs["parsing_modality"] = advanced_parsing_modality
+            # Bedrock rejects an empty BedrockDataAutomationConfiguration object.
+            # Default to MULTIMODAL when the modality is not explicitly provided.
+            modality = (advanced_parsing_modality or "MULTIMODAL").strip().upper()
+            bda_kwargs: dict[str, object] = {"parsing_modality": modality}
             parsing_configuration_kwargs["bedrock_data_automation_configuration"] = (
                 bedrock.CfnDataSource.BedrockDataAutomationConfigurationProperty(**bda_kwargs)
             )
@@ -401,7 +461,8 @@ class EvidentiaFoundationStack(Stack):
         *,
         raw_bucket: s3.Bucket,
         assets_bucket: s3.Bucket,
-        vectors_bucket: s3.Bucket,
+        vectors_bucket: s3vectors.CfnVectorBucket,
+        vectors_index: s3vectors.CfnIndex,
         kb_role: iam.Role,
         api_role: iam.Role,
         stage_name: str,
@@ -414,8 +475,10 @@ class EvidentiaFoundationStack(Stack):
             "RawBucketArn": raw_bucket.bucket_arn,
             "AssetsBucketName": assets_bucket.bucket_name,
             "AssetsBucketArn": assets_bucket.bucket_arn,
-            "VectorsBucketName": vectors_bucket.bucket_name,
-            "VectorsBucketArn": vectors_bucket.bucket_arn,
+            "VectorsBucketName": vectors_bucket.ref,
+            "VectorsBucketArn": vectors_bucket.attr_vector_bucket_arn,
+            "S3VectorsIndexName": vectors_index.ref,
+            "S3VectorsIndexArn": vectors_index.attr_index_arn,
             "RawPrefixTemplate": f"{RAW_PREFIX}/{{doc_id}}/source.pdf",
             "AssetsPrefixTemplate": f"{ASSETS_PREFIX}/{{doc_id}}/{{asset_id}}.png",
             "KnowledgeBaseRoleArn": kb_role.role_arn,

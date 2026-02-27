@@ -12,6 +12,15 @@ These contracts cover:
 - Canonical evidence item schema
 - Metadata requirements and citation integrity rules
 
+## Repository Implementation Status
+
+These contracts are currently implemented as:
+
+- Schemas in `schemas/`
+- Validation helpers in `validation/`
+- Contract fixtures in `tests/fixtures/`
+- Fixture validation tests in `tests/test_contract_fixtures.py`
+
 ## Design Rules
 
 - Multi-document is the default behavior unless scope is explicit.

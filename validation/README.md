@@ -9,12 +9,14 @@ This package wires the JSON schemas in `schemas/` into a small validation layer 
 ## Requirements
 
 - Python 3.10+
-- `jsonschema` package
+- `jsonschema` package (declared in root `pyproject.toml`)
 
 Install:
 
 ```bash
-pip install jsonschema
+# from repo root
+pip install -e .
+# or: uv sync
 ```
 
 ## Example
@@ -44,3 +46,9 @@ validate_model_answer_against_evidence(model_answer, evidence)
 
 - The JSON schemas remain the source of truth for request/model JSON shape.
 - Citation integrity is validated separately because it depends on the selected runtime evidence bundle.
+
+Run contract fixture tests:
+
+```bash
+python -m unittest tests/test_contract_fixtures.py
+```

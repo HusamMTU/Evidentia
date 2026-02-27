@@ -8,6 +8,19 @@ This plan maps `docs/context/SYSTEM_INVARIANTS.md` to executable tests for the M
 - Separate deterministic pipeline failures from LLM/generation failures
 - Provide repeatable regression checks for multi-document behavior and citation integrity
 
+## Current Implemented Test Assets (as of 2026-02-27)
+
+- Contract fixture validation test: `tests/test_contract_fixtures.py`
+- Contract fixtures:
+  - `tests/fixtures/query-request.unscoped.valid.json`
+  - `tests/fixtures/query-request.scoped.valid.json`
+  - `tests/fixtures/model-answer.valid.json`
+  - `tests/fixtures/evidence-item.text.valid.json`
+  - `tests/fixtures/evidence-item.visual.valid.json`
+  - `tests/fixtures/query-response.valid.json`
+
+Current coverage is Phase 0 focused (schema compliance + citation integrity fixture checks). The remainder of this document defines the planned expansion across later phases.
+
 ## Test Strategy
 
 - Prefer deterministic unit/integration tests for retrieval, evidence builder, and validation logic.
