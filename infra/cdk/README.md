@@ -7,17 +7,32 @@ This CDK app provisions the Phase 1 AWS foundation for the Evidentia MVP:
 - IAM role for Bedrock Knowledge Base access (raw docs + assets paths)
 - IAM role for API runtime access (asset reads/presigning + Bedrock invoke/retrieve)
 - Stack outputs for runtime configuration wiring
-- Optional Bedrock Knowledge Base + S3 data source resources (context-driven)
+- Bedrock Knowledge Base + S3 data source resources (required for full query path, toggleable for staged deploys)
 
-## Bedrock KB Support Status
+## Bedrock KB Deployment Modes
 
-This stack now supports optional provisioning of:
+For the Evidentia query pipeline, these components are essential:
 
 - Bedrock Knowledge Base (`VECTOR`)
 - S3 Vectors storage configuration (`S3_VECTORS`)
 - Bedrock S3 data source (`S3`)
 
-The resources are disabled by default and enabled via CDK context/environment because they require environment-specific values (for example an embedding model ARN and S3 Vectors index name).
+The `enableBedrockKb` toggle exists to support staged deployment and troubleshooting:
+
+- `enableBedrockKb=false`: foundation-only deploy (buckets, vector bucket/index, IAM roles)
+- `enableBedrockKb=true`: full KB deploy (required for retrieval + grounded answer flow)
+
+The stack defaults to `false` because KB creation requires environment-specific values (for example an embedding model ARN and parsing settings).
+
+## What Bedrock S3 Data Source Is For
+
+The Bedrock S3 data source defines what the KB ingests:
+
+- points the KB to the raw documents S3 location (`documents-raw/...`)
+- applies inclusion prefixes for which objects should be ingested
+- is the resource Bedrock ingestion jobs run against to chunk/embed/index documents
+
+Without a data source, the KB exists but has no document corpus to ingest.
 
 ## Architecture Flow
 
@@ -25,8 +40,8 @@ The resources are disabled by default and enabled via CDK context/environment be
 flowchart LR
   subgraph Ingestion["Ingestion Path"]
     DOCS["Source PDFs"] --> RAW["Raw Documents Bucket<br/>documents-raw/{doc_id}/source.pdf"]
-    RAW -->|S3 data source| DS["Bedrock Data Source<br/>(optional)"]
-    DS --> KB["Bedrock Knowledge Base<br/>(optional)"]
+    RAW -->|S3 data source| DS["Bedrock Data Source"]
+    DS --> KB["Bedrock Knowledge Base"]
     KB -->|Vector storage| VECT["S3 Vector Bucket + Index"]
     KB -->|Extracted visuals| ASSETS["Assets Bucket<br/>documents-assets/{doc_id}/{asset_id}.png"]
   end
@@ -80,7 +95,41 @@ cdk synth --app ".venv/bin/python app.py" -c stage=dev
 cdk deploy --app ".venv/bin/python app.py" -c stage=dev
 ```
 
-Populate `.env.example` values from CloudFormation outputs after deploy (bucket names, role ARNs).
+For normal Evidentia environments, deploy with KB enabled:
+
+```bash
+cdk deploy --app ".venv/bin/python app.py" \
+  -c stage=dev \
+  -c enableBedrockKb=true
+```
+
+## Populate `.env` From Stack Outputs
+
+Use `.env.example` as a template and put real values in `.env` (do not edit committed placeholders in `.env.example`).
+
+From repo root:
+
+```bash
+cp .env.example .env   # first time only
+```
+
+After deploy, populate `.env` with stack outputs:
+
+| CloudFormation Output | `.env` key | Notes |
+| --- | --- | --- |
+| `RawBucketName` | `EVIDENTIA_RAW_BUCKET` | Runtime bucket for source PDFs |
+| `AssetsBucketName` | `EVIDENTIA_ASSETS_BUCKET` | Runtime bucket for extracted assets |
+| `VectorsBucketArn` | `EVIDENTIA_VECTORS_BUCKET` | Preferred identifier for S3 Vectors resources |
+| `ApiRuntimeRoleArn` | `EVIDENTIA_API_ROLE_ARN` | Runtime role wiring |
+| `BedrockKnowledgeBaseId` | `BEDROCK_KNOWLEDGE_BASE_ID` | Present when `enableBedrockKb=true` |
+| `BedrockKnowledgeBaseDataSourceId` | `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID` | Present when `enableBedrockKb=true` |
+| `S3VectorsIndexName` | `BEDROCK_S3_VECTORS_INDEX_NAME` | Index name used by KB storage config |
+
+Set these manually (not emitted as stack outputs):
+
+- `BEDROCK_EMBEDDING_MODEL_ARN` (the embedding model ARN you choose)
+- `BEDROCK_KNOWLEDGE_BASE_NAME` (if you want explicit app-level naming)
+- `CLAUDE_MODEL_ID` (Phase 5 model invocation)
 
 ## Destroy Stack
 
@@ -125,7 +174,7 @@ Optional CDK context values are shown below. Each value can also be provided via
 | `rawBucketName` | `INFRA_RAW_BUCKET_NAME` | Explicit S3 bucket name for raw input documents. If omitted, CloudFormation generates one. | CloudFormation-generated | No |
 | `assetsBucketName` | `INFRA_ASSETS_BUCKET_NAME` | Explicit S3 bucket name for extracted visual assets. If omitted, CloudFormation generates one. | CloudFormation-generated | No |
 | `vectorsBucketName` | `INFRA_VECTORS_BUCKET_NAME` | Explicit **S3 Vector Bucket** name (`AWS::S3Vectors::VectorBucket`). If omitted, CloudFormation generates one. | CloudFormation-generated | No |
-| `enableBedrockKb` | `EVIDENTIA_ENABLE_BEDROCK_KB` | Toggles creation of Bedrock Knowledge Base and S3 data source resources. | `false` | No |
+| `enableBedrockKb` | `EVIDENTIA_ENABLE_BEDROCK_KB` | Toggles creation of Bedrock Knowledge Base and S3 data source resources. Set to `true` for full project deployment. | `false` | No |
 | `knowledgeBaseName` | `BEDROCK_KNOWLEDGE_BASE_NAME` | Name for the Bedrock Knowledge Base resource. | `evidentia-kb-{stage}` | No |
 | `knowledgeBaseDataSourceName` | `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` | Name for the Bedrock S3 data source attached to the KB. | `evidentia-raw-s3-{stage}` | No |
 | `embeddingModelArn` | `BEDROCK_EMBEDDING_MODEL_ARN` | ARN of the embedding model used by the vector KB configuration. | None | Yes, if `enableBedrockKb=true` |
