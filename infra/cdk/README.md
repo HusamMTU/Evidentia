@@ -57,33 +57,15 @@ flowchart LR
   APIR["IAM Role: ApiRuntimeRole"] -.assumed by.-> API
 ```
 
-## Quick Start
+## Setup and Deploy
 
-1. Create a virtual environment for the CDK app
-2. Install dependencies
-3. Bootstrap CDK (once per account/region)
-4. Synthesize (recommended)
-5. Deploy the stack
-
-Example:
+Use this flow for first-time setup and deployment. It keeps account/region explicit and loads `.env` for context/env-driven values.
 
 ```bash
 cd infra/cdk
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
-cdk bootstrap
-cdk synth --app ".venv/bin/python app.py"
-cdk deploy --app ".venv/bin/python app.py"
-```
-
-## Deploy Commands (Tailored Flow)
-
-Use explicit account/region on bootstrap to avoid deploying to the wrong default environment:
-
-```bash
-cd infra/cdk
-. .venv/bin/activate
 set -a; source ../../.env; set +a
 
 export AWS_REGION=us-east-1
@@ -95,12 +77,22 @@ cdk synth --app ".venv/bin/python app.py" -c stage=dev
 cdk deploy --app ".venv/bin/python app.py" -c stage=dev
 ```
 
-For normal Evidentia environments, deploy with KB enabled:
+Deploy variants:
+
+- Full project deployment (recommended):
 
 ```bash
 cdk deploy --app ".venv/bin/python app.py" \
   -c stage=dev \
   -c enableBedrockKb=true
+```
+
+- Foundation-only troubleshooting mode:
+
+```bash
+cdk deploy --app ".venv/bin/python app.py" \
+  -c stage=dev \
+  -c enableBedrockKb=false
 ```
 
 ## Populate `.env` From Stack Outputs
