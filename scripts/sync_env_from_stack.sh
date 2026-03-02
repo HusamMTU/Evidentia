@@ -129,6 +129,8 @@ value_evidentia_raw_bucket="$(get_output "RawBucketName")"
 value_evidentia_assets_bucket="$(get_output "AssetsBucketName")"
 value_evidentia_vectors_bucket="$(get_output "VectorsBucketArn")"
 value_evidentia_api_role_arn="$(get_output "ApiRuntimeRoleArn")"
+value_evidentia_ingestion_manifest_table_name="$(get_output "IngestionManifestTableName")"
+value_evidentia_ingestion_manifest_source_uri_index="$(get_output "IngestionManifestSourceUriIndexName")"
 value_bedrock_kb_id="$(get_output "BedrockKnowledgeBaseId")"
 value_bedrock_data_source_id="$(get_output "BedrockKnowledgeBaseDataSourceId")"
 value_bedrock_s3_vectors_index_name="$(get_output "S3VectorsIndexName")"
@@ -140,6 +142,8 @@ value_for_key() {
     EVIDENTIA_ASSETS_BUCKET) printf "%s" "$value_evidentia_assets_bucket" ;;
     EVIDENTIA_VECTORS_BUCKET) printf "%s" "$value_evidentia_vectors_bucket" ;;
     EVIDENTIA_API_ROLE_ARN) printf "%s" "$value_evidentia_api_role_arn" ;;
+    EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME) printf "%s" "$value_evidentia_ingestion_manifest_table_name" ;;
+    EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX) printf "%s" "$value_evidentia_ingestion_manifest_source_uri_index" ;;
     BEDROCK_KNOWLEDGE_BASE_ID) printf "%s" "$value_bedrock_kb_id" ;;
     BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID) printf "%s" "$value_bedrock_data_source_id" ;;
     BEDROCK_S3_VECTORS_INDEX_NAME) printf "%s" "$value_bedrock_s3_vectors_index_name" ;;
@@ -152,6 +156,8 @@ required_keys=(
   "EVIDENTIA_ASSETS_BUCKET"
   "EVIDENTIA_VECTORS_BUCKET"
   "EVIDENTIA_API_ROLE_ARN"
+  "EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME"
+  "EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX"
   "BEDROCK_S3_VECTORS_INDEX_NAME"
 )
 
@@ -172,6 +178,8 @@ for key in \
   EVIDENTIA_ASSETS_BUCKET \
   EVIDENTIA_VECTORS_BUCKET \
   EVIDENTIA_API_ROLE_ARN \
+  EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME \
+  EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX \
   BEDROCK_KNOWLEDGE_BASE_ID \
   BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID \
   BEDROCK_S3_VECTORS_INDEX_NAME
@@ -195,6 +203,8 @@ for key in \
   EVIDENTIA_ASSETS_BUCKET \
   EVIDENTIA_VECTORS_BUCKET \
   EVIDENTIA_API_ROLE_ARN \
+  EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME \
+  EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX \
   BEDROCK_KNOWLEDGE_BASE_ID \
   BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID \
   BEDROCK_S3_VECTORS_INDEX_NAME

@@ -25,6 +25,7 @@ Use these for product/system context instead of duplicating that detail here:
 - S3 bucket for raw documents
 - S3 bucket for extracted visual assets
 - S3 Vectors vector bucket + index
+- DynamoDB ingestion manifest table (`doc_id` <-> source URI mapping)
 - IAM role for Bedrock Knowledge Base ingestion/runtime (`KnowledgeBaseRole`)
 - IAM role for API runtime retrieval/model access (`ApiRuntimeRole`)
 - Optional Bedrock Knowledge Base + S3 data source (when enabled)
@@ -32,7 +33,7 @@ Use these for product/system context instead of duplicating that detail here:
 
 ## Deployment Modes
 
-- `enableBedrockKb=false` (default): foundation-only deploy (S3, S3 Vectors, IAM)
+- `enableBedrockKb=false` (default): foundation-only deploy (S3, S3 Vectors, DynamoDB, IAM)
 - `enableBedrockKb=true`: full deploy including Bedrock KB + S3 data source
 
 When `enableBedrockKb=true`, `embeddingModelArn` / `BEDROCK_EMBEDDING_MODEL_ARN` is required.
@@ -43,6 +44,7 @@ When `enableBedrockKb=true`, `embeddingModelArn` / `BEDROCK_EMBEDDING_MODEL_ARN`
 - AWS CLI configured with credentials for target account/region
 - CDK CLI (`cdk`)
 - `.env` at repo root for environment values
+- For smoke-test manifest writes, Python `boto3` must be available to `python3` (for example via `pip install -e .` or `uv sync` from repo root)
 
 ## Build and Deploy (Examples)
 
@@ -101,6 +103,7 @@ Context keys resolve in this order: CDK context (`-c ...`) -> env var -> default
 | `rawBucketName` | `INFRA_RAW_BUCKET_NAME` | generated | Optional explicit raw bucket name. |
 | `assetsBucketName` | `INFRA_ASSETS_BUCKET_NAME` | generated | Optional explicit assets bucket name. |
 | `vectorsBucketName` | `INFRA_VECTORS_BUCKET_NAME` | generated | Optional explicit vector bucket name. |
+| `ingestionManifestTableName` | `INFRA_INGESTION_MANIFEST_TABLE_NAME` | generated | Optional explicit DynamoDB ingestion manifest table name. |
 | `apiRuntimePrincipal` | `EVIDENTIA_API_RUNTIME_PRINCIPAL` | `lambda.amazonaws.com` | Assume-role principal for API role. |
 | `enableBedrockKb` | `EVIDENTIA_ENABLE_BEDROCK_KB` | `false` | Enables KB + data source resources. |
 | `knowledgeBaseName` | `BEDROCK_KNOWLEDGE_BASE_NAME` | derived | Optional explicit KB name. |
@@ -130,6 +133,7 @@ Note:
 - `VectorsBucketName`, `VectorsBucketArn`
 - `S3VectorsIndexName`, `S3VectorsIndexArn`
 - `RawPrefixTemplate`, `AssetsPrefixTemplate`
+- `IngestionManifestTableName`, `IngestionManifestTableArn`, `IngestionManifestSourceUriIndexName`
 - `KnowledgeBaseRoleArn`, `ApiRuntimeRoleArn`
 - `BedrockKnowledgeBaseId`, `BedrockKnowledgeBaseArn` (KB enabled only)
 - `BedrockKnowledgeBaseDataSourceId` (KB enabled only)
@@ -153,8 +157,10 @@ This sync writes/updates:
 
 - `EVIDENTIA_RAW_BUCKET`
 - `EVIDENTIA_ASSETS_BUCKET`
-- `EVIDENTIA_VECTORS_BUCKET`
+- `EVIDENTIA_VECTORS_BUCKET` (from `VectorsBucketArn`)
 - `EVIDENTIA_API_ROLE_ARN`
+- `EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME`
+- `EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX`
 - `BEDROCK_KNOWLEDGE_BASE_ID`
 - `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID`
 - `BEDROCK_S3_VECTORS_INDEX_NAME`
@@ -170,6 +176,8 @@ Run from repo root:
   --file /absolute/path/to/sample.pdf
 ```
 
+This smoke test requires a deployed KB/data source (`enableBedrockKb=true`).
+
 Resolution order in the script:
 
 - `.env` values first (`EVIDENTIA_*`, `BEDROCK_*`)
@@ -177,6 +185,12 @@ Resolution order in the script:
 - optional name-based KB/data source resolution via:
   - `BEDROCK_KNOWLEDGE_BASE_NAME` / `--kb-name`
   - `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` / `--data-source-name`
+- ingestion manifest persistence (default enabled):
+  - upserts `doc_id <-> source_uri` into DynamoDB table (`EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME`)
+  - status upsert sequence: `uploaded` -> `ingestion_started` -> `ingested`
+  - override table name with `--manifest-table-name`
+  - override GSI name with `--manifest-source-uri-index-name` (default `source_uri-index`)
+  - disable for troubleshooting with `--skip-manifest-write`
 
 Extracted asset key notes:
 
@@ -187,6 +201,7 @@ Extracted asset key notes:
   - legacy/doc-scoped prefix (`documents-assets/<doc_id>/...`) for backward compatibility
   - Bedrock-managed prefix (`aws/bedrock/knowledge_bases/<kb_id>/<data_source_id>/...`)
 - For many documents, Bedrock assets can represent a larger page context around a figure/table, not only a tightly cropped object.
+- Retrieval normalization should resolve `doc_id` from manifest/provenance metadata, not from asset key shape.
 
 Pass signal:
 
@@ -204,7 +219,7 @@ set -a; source ../../.env; set +a
 cdk destroy "EvidentiaFoundation-dev" --app ".venv/bin/python app.py" --force
 ```
 
-Storage/vector resources are retained by design (`RETAIN` policies). Use cleanup scripts when you need a fully clean state.
+Storage/vector resources are retained by design (`RETAIN` policies). DynamoDB ingestion manifest table is also retained. Use cleanup scripts/commands when you need a fully clean state.
 
 ### Cleanup classic S3 leftovers
 
@@ -226,15 +241,28 @@ Storage/vector resources are retained by design (`RETAIN` policies). Use cleanup
 ./scripts/cleanup_redundant_s3vectors.sh --region us-east-1 --stack-name EvidentiaFoundation-dev --execute
 ```
 
+### Cleanup ingestion manifest table leftovers
+
+```bash
+TABLE_NAME="$(aws --region us-east-1 cloudformation describe-stacks \
+  --stack-name EvidentiaFoundation-dev \
+  --query 'Stacks[0].Outputs[?OutputKey==`IngestionManifestTableName`].OutputValue' \
+  --output text)"
+
+aws --region us-east-1 dynamodb delete-table --table-name "$TABLE_NAME"
+```
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `enable_bedrock_kb=True requires embedding_model_arn` during synth/deploy | KB enabled without embedding model ARN | Set `BEDROCK_EMBEDDING_MODEL_ARN` or pass `-c embeddingModelArn=...`. |
 | `advanced_parsing_strategy=BEDROCK_FOUNDATION_MODEL requires advanced_parsing_model_arn` | Missing model ARN for FM parsing | Set `BEDROCK_ADVANCED_PARSING_MODEL_ARN` or `-c advancedParsingModelArn=...`. |
+| `ModuleNotFoundError: No module named 'boto3'` during smoke test manifest step | `python3` environment does not include runtime dependencies | Install root deps (`pip install -e .` or `uv sync`) and rerun smoke test. |
 | Smoke test cannot resolve KB/data source IDs | `.env` stale, KB disabled, or wrong stack | Re-sync `.env` from outputs, verify `enableBedrockKb=true`, check stack/region. |
+| Smoke test cannot resolve ingestion manifest table | `.env` missing table output or stack not updated | Re-run `sync_env_from_stack.sh`, or pass `--manifest-table-name`, or deploy updated stack. |
 | Smoke test resolves deleted bucket IDs | `.env` points to old resources after redeploy | Re-run `sync_env_from_stack.sh` and retry. |
-| `cdk destroy` completes but buckets/vector buckets still exist | Resources are retained intentionally | Run cleanup scripts above if you need full teardown. |
+| `cdk destroy` completes but buckets/vector buckets/table still exist | Resources are retained intentionally | Run cleanup scripts/commands above if you need full teardown. |
 | Deploy fails with resource name collisions | Explicit names pinned to old/stale resources | Remove fixed names (`INFRA_*`, KB/data source name overrides) or clean stale resources first. |
 
 ## Fast Redeploy From Clean State

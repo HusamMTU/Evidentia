@@ -11,6 +11,7 @@ from aws_cdk import (
     RemovalPolicy,
     Stack,
     aws_bedrock as bedrock,
+    aws_dynamodb as dynamodb,
     aws_iam as iam,
     aws_s3 as s3,
     aws_s3vectors as s3vectors,
@@ -22,6 +23,7 @@ RAW_PREFIX = "documents-raw"
 BEDROCK_ASSETS_PREFIX_TEMPLATE = (
     "aws/bedrock/knowledge_bases/{knowledge_base_id}/{data_source_id}/{asset_uuid}.png"
 )
+INGESTION_MANIFEST_SOURCE_URI_INDEX_NAME = "source_uri-index"
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,7 @@ class FoundationStackProps:
     raw_bucket_name: str | None = None
     assets_bucket_name: str | None = None
     vectors_bucket_name: str | None = None
+    ingestion_manifest_table_name: str | None = None
     api_runtime_principal: str = "lambda.amazonaws.com"
     enable_bedrock_kb: bool = False
     knowledge_base_name: str | None = None
@@ -61,6 +64,7 @@ class EvidentiaFoundationStack(Stack):
         raw_bucket_name: str | None = None,
         assets_bucket_name: str | None = None,
         vectors_bucket_name: str | None = None,
+        ingestion_manifest_table_name: str | None = None,
         api_runtime_principal: str = "lambda.amazonaws.com",
         enable_bedrock_kb: bool = False,
         knowledge_base_name: str | None = None,
@@ -83,6 +87,7 @@ class EvidentiaFoundationStack(Stack):
             raw_bucket_name=raw_bucket_name,
             assets_bucket_name=assets_bucket_name,
             vectors_bucket_name=vectors_bucket_name,
+            ingestion_manifest_table_name=ingestion_manifest_table_name,
             api_runtime_principal=api_runtime_principal,
             enable_bedrock_kb=enable_bedrock_kb,
             knowledge_base_name=knowledge_base_name,
@@ -117,6 +122,9 @@ class EvidentiaFoundationStack(Stack):
             dimension=props.s3_vectors_dimension,
             distance_metric=props.s3_vectors_distance_metric,
         )
+        ingestion_manifest_table = self._create_ingestion_manifest_table(
+            explicit_name=props.ingestion_manifest_table_name
+        )
 
         kb_role = self._create_kb_role(
             raw_bucket=raw_bucket,
@@ -127,6 +135,7 @@ class EvidentiaFoundationStack(Stack):
         )
         api_role = self._create_api_role(
             assets_bucket=assets_bucket,
+            ingestion_manifest_table=ingestion_manifest_table,
             api_runtime_principal=props.api_runtime_principal,
         )
 
@@ -153,6 +162,7 @@ class EvidentiaFoundationStack(Stack):
             assets_bucket=assets_bucket,
             vectors_bucket=vectors_bucket,
             vectors_index=vectors_index,
+            ingestion_manifest_table=ingestion_manifest_table,
             kb_role=kb_role,
             api_role=api_role,
             stage_name=props.stage_name,
@@ -241,6 +251,36 @@ class EvidentiaFoundationStack(Stack):
         )
         return bucket
 
+    def _create_ingestion_manifest_table(
+        self,
+        *,
+        explicit_name: str | None,
+    ) -> dynamodb.Table:
+        table = dynamodb.Table(
+            self,
+            "IngestionManifestTable",
+            table_name=explicit_name,
+            partition_key=dynamodb.Attribute(
+                name="doc_id",
+                type=dynamodb.AttributeType.STRING,
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            encryption=dynamodb.TableEncryption.AWS_MANAGED,
+            point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
+                point_in_time_recovery_enabled=True
+            ),
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+        table.add_global_secondary_index(
+            index_name=INGESTION_MANIFEST_SOURCE_URI_INDEX_NAME,
+            partition_key=dynamodb.Attribute(
+                name="source_uri",
+                type=dynamodb.AttributeType.STRING,
+            ),
+            projection_type=dynamodb.ProjectionType.ALL,
+        )
+        return table
+
     def _create_kb_role(
         self,
         *,
@@ -317,7 +357,13 @@ class EvidentiaFoundationStack(Stack):
 
         return role
 
-    def _create_api_role(self, *, assets_bucket: s3.Bucket, api_runtime_principal: str) -> iam.Role:
+    def _create_api_role(
+        self,
+        *,
+        assets_bucket: s3.Bucket,
+        ingestion_manifest_table: dynamodb.Table,
+        api_runtime_principal: str,
+    ) -> iam.Role:
         role = iam.Role(
             self,
             "ApiRuntimeRole",
@@ -326,6 +372,7 @@ class EvidentiaFoundationStack(Stack):
         )
 
         assets_bucket.grant_read(role)
+        ingestion_manifest_table.grant_read_write_data(role)
 
         role.add_to_policy(
             iam.PolicyStatement(
@@ -586,6 +633,7 @@ class EvidentiaFoundationStack(Stack):
         assets_bucket: s3.Bucket,
         vectors_bucket: s3vectors.CfnVectorBucket,
         vectors_index: s3vectors.CfnIndex,
+        ingestion_manifest_table: dynamodb.Table,
         kb_role: iam.Role,
         api_role: iam.Role,
         stage_name: str,
@@ -604,6 +652,9 @@ class EvidentiaFoundationStack(Stack):
             "S3VectorsIndexArn": vectors_index.attr_index_arn,
             "RawPrefixTemplate": f"{RAW_PREFIX}/{{doc_id}}/source.pdf",
             "AssetsPrefixTemplate": BEDROCK_ASSETS_PREFIX_TEMPLATE,
+            "IngestionManifestTableName": ingestion_manifest_table.table_name,
+            "IngestionManifestTableArn": ingestion_manifest_table.table_arn,
+            "IngestionManifestSourceUriIndexName": INGESTION_MANIFEST_SOURCE_URI_INDEX_NAME,
             "KnowledgeBaseRoleArn": kb_role.role_arn,
             "ApiRuntimeRoleArn": api_role.role_arn,
         }

@@ -11,6 +11,7 @@ Canonical shapes live only in `schemas/`.
 - Canonical schema definitions: `schemas/*.schema.json`
 - Runtime validation logic: `validation/validators.py`
 - Contract fixture checks: `tests/test_contract_fixtures.py`
+- Provenance join logic: `provenance/manifest_store.py` (DynamoDB-backed), `provenance/retrieval_normalizer.py`
 
 ## Schema Index
 
@@ -44,10 +45,12 @@ Recommended sequence for query handling:
 
 1. Validate request payload with `validate_query_request`.
 2. Resolve request mode (scoped/unscoped) from request fields.
-3. Retrieve candidates and build deterministic evidence bundle.
-4. Validate model JSON shape with `validate_model_answer`.
-5. Validate citation integrity against selected evidence IDs with `validate_citation_integrity` (or `validate_model_answer_against_evidence`).
-6. Build final API response and validate with `validate_query_response`.
+3. Retrieve candidates from KB/vector backend.
+4. Normalize retrieval provenance and resolve stable `doc_id` using ingestion manifest mapping (`normalize_retrieval_candidate_doc_id`).
+5. Build deterministic evidence bundle.
+6. Validate model JSON shape with `validate_model_answer`.
+7. Validate citation integrity against selected evidence IDs with `validate_citation_integrity` (or `validate_model_answer_against_evidence`).
+8. Build final API response and validate with `validate_query_response`.
 
 ## Change Workflow
 

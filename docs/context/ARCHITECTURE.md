@@ -13,6 +13,7 @@ This document is the canonical architecture reference. It explains how the syste
 
 - Ingestion surface (document registration/upload)
 - Raw document storage (S3 raw prefix)
+- Ingestion manifest/provenance store (DynamoDB; `doc_id` <-> source URI mapping)
 - Knowledge base ingestion/parsing (Bedrock KB + advanced parsing)
 - Vector retrieval backend (S3 Vectors)
 - Retrieval adapter
@@ -27,32 +28,37 @@ This document is the canonical architecture reference. It explains how the syste
 ### Ingestion Path
 
 1. Documents are stored in raw storage.
-2. Knowledge base ingestion parses and chunks content.
-3. Visual artifacts are extracted to asset storage.
-4. Text and visual representations are embedded and indexed.
-5. Metadata is preserved for downstream provenance.
+2. Ingestion manifest persists the stable `doc_id` to source URI mapping at registration/upload time.
+3. Knowledge base ingestion parses and chunks content.
+4. Visual artifacts are extracted to asset storage.
+5. Text and visual representations are embedded and indexed.
+6. Ingestion manifest status is updated across ingestion lifecycle states (for example `uploaded` -> `ingestion_started` -> `ingested`).
+7. Metadata is preserved for downstream provenance.
 
 Why:
 
 - Separates source-of-record content from derived artifacts.
 - Enables multimodal retrieval and citation traceability.
 - Keeps ingestion reproducible and diagnosable.
+- Keeps `doc_id` semantics stable even when extracted asset key paths do not include `doc_id`.
 
 ### Query Path
 
 1. API receives the user query.
 2. Scope resolver determines scoped vs unscoped execution.
 3. Retrieval adapter pulls candidates from the KB/vector backend.
-4. Evidence builder normalizes, deduplicates, and reranks candidates.
-5. Selected evidence is passed to the model orchestrator.
-6. Model output is validated and cross-checked against evidence IDs.
-7. Final response is assembled and returned with evidence payload.
+4. Candidate provenance is normalized and `doc_id` is resolved from manifest-backed source metadata.
+5. Evidence builder normalizes, deduplicates, and reranks candidates.
+6. Selected evidence is passed to the model orchestrator.
+7. Model output is validated and cross-checked against evidence IDs.
+8. Final response is assembled and returned with evidence payload.
 
 Why:
 
 - Retrieval/evidence selection remains deterministic and testable.
 - Model is constrained to selected evidence rather than raw corpus state.
 - Validation catches schema/citation drift before response delivery.
+- Provenance join does not depend on parsing storage key naming conventions.
 
 ## Determinism Boundaries
 
