@@ -27,3 +27,6 @@ infra/cdk/cdk.out/
 
 # Env files
 .env
+
+# Local manifest store
+.evidentia/

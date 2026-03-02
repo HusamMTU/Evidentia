@@ -149,6 +149,7 @@ Goal: Make document ingestion reproducible and verify metadata quality.
 ### Deliverables
 
 - Ingestion script/service endpoint
+- Ingestion manifest store and upsert utility (`scripts/register_ingestion_manifest.py`)
 - Seed dataset manifest (`doc_id`, `doc_type`, source path)
 - Ingestion verification report (simple JSON/CSV/log output is fine)
 

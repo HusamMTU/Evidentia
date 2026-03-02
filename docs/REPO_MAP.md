@@ -26,9 +26,18 @@ One-page map of where core concepts live.
 - `validation/schema_loader.py`: schema loading and resolution support
 - `validation/errors.py`: validation error types
 
+## Provenance and Manifest
+
+- `provenance/manifest_store.py`: SQLite-backed ingestion manifest (`doc_id <-> source URI`) persistence
+- `provenance/retrieval_normalizer.py`: retrieval candidate doc_id normalization from provenance metadata + manifest lookup
+- `provenance/errors.py`: provenance-specific errors
+- `scripts/register_ingestion_manifest.py`: CLI to upsert manifest entries
+
 ## Tests and Fixtures
 
 - `tests/test_contract_fixtures.py`: executable contract fixture checks
+- `tests/test_ingestion_manifest_store.py`: manifest persistence and lookup tests
+- `tests/test_retrieval_provenance_normalizer.py`: doc_id resolution/normalization tests
 - `tests/fixtures/`: valid payload/evidence fixtures used by contract tests
 - `tests/`: location for unit/integration/e2e suites
 
@@ -41,6 +50,7 @@ One-page map of where core concepts live.
 ## Operational Scripts
 
 - `scripts/phase1_ingestion_smoke_test.sh`: ingestion smoke validation
+- `scripts/register_ingestion_manifest.py`: ingestion manifest upsert helper
 - `scripts/sync_env_from_stack.sh`: populate env from stack outputs
 - `scripts/cleanup_redundant_s3_buckets.sh`: cleanup classic S3 leftovers
 - `scripts/cleanup_redundant_s3vectors.sh`: cleanup S3 Vectors leftovers

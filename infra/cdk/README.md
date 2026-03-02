@@ -177,6 +177,10 @@ Resolution order in the script:
 - optional name-based KB/data source resolution via:
   - `BEDROCK_KNOWLEDGE_BASE_NAME` / `--kb-name`
   - `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` / `--data-source-name`
+- ingestion manifest persistence (default enabled):
+  - upserts `doc_id <-> source_uri` into local SQLite manifest (`.evidentia/ingestion_manifest.db` by default)
+  - override path with `--manifest-db` or `EVIDENTIA_INGESTION_MANIFEST_DB`
+  - disable for troubleshooting with `--skip-manifest-write`
 
 Extracted asset key notes:
 
@@ -187,6 +191,7 @@ Extracted asset key notes:
   - legacy/doc-scoped prefix (`documents-assets/<doc_id>/...`) for backward compatibility
   - Bedrock-managed prefix (`aws/bedrock/knowledge_bases/<kb_id>/<data_source_id>/...`)
 - For many documents, Bedrock assets can represent a larger page context around a figure/table, not only a tightly cropped object.
+- Retrieval normalization should resolve `doc_id` from manifest/provenance metadata, not from asset key shape.
 
 Pass signal:
 

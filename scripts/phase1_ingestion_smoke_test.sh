@@ -19,6 +19,8 @@ Options:
   --kb-name <name>       Knowledge base name for ID discovery fallback
   --data-source-name <name>
                           Data source name for ID discovery fallback
+  --manifest-db <path>   Local SQLite ingestion manifest path (default: .evidentia/ingestion_manifest.db)
+  --skip-manifest-write  Skip manifest upsert step after raw upload
   --poll-seconds <n>     Poll interval in seconds (default: 15)
   --timeout-seconds <n>  Max wait time in seconds (default: 1800)
   -h, --help             Show this help
@@ -49,6 +51,10 @@ kb_name="${BEDROCK_KNOWLEDGE_BASE_NAME:-}"
 data_source_name="${BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME:-}"
 poll_seconds=15
 timeout_seconds=1800
+manifest_db="${EVIDENTIA_INGESTION_MANIFEST_DB:-.evidentia/ingestion_manifest.db}"
+skip_manifest_write=false
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+manifest_register_script="${script_dir}/register_ingestion_manifest.py"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -95,6 +101,14 @@ while [[ $# -gt 0 ]]; do
     --data-source-name)
       data_source_name="${2:-}"
       shift 2
+      ;;
+    --manifest-db)
+      manifest_db="${2:-}"
+      shift 2
+      ;;
+    --skip-manifest-write)
+      skip_manifest_write=true
+      shift
       ;;
     --poll-seconds)
       poll_seconds="${2:-}"
@@ -326,6 +340,8 @@ echo "Raw bucket: $raw_bucket"
 echo "Assets bucket: $assets_bucket"
 echo "Knowledge base ID: $kb_id"
 echo "Data source ID: $data_source_id"
+echo "Manifest DB: $manifest_db"
+echo "Manifest write: $([[ "$skip_manifest_write" == true ]] && echo "disabled" || echo "enabled")"
 if [[ -n "$kb_name" ]]; then
   echo "Knowledge base name hint: $kb_name"
 fi
@@ -337,6 +353,43 @@ echo
 echo "1) Uploading source PDF to s3://${raw_bucket}/${raw_key}"
 aws "${aws_args[@]}" s3 cp "$file_path" "s3://${raw_bucket}/${raw_key}"
 aws "${aws_args[@]}" s3api head-object --bucket "$raw_bucket" --key "$raw_key" >/dev/null
+
+source_uri="s3://${raw_bucket}/${raw_key}"
+read -r source_etag source_version_id <<<"$(aws "${aws_args[@]}" s3api head-object \
+  --bucket "$raw_bucket" \
+  --key "$raw_key" \
+  --query "[ETag,VersionId]" \
+  --output text)"
+if [[ "$source_etag" == "None" ]]; then
+  source_etag=""
+fi
+if [[ "$source_version_id" == "None" ]]; then
+  source_version_id=""
+fi
+
+if [[ "$skip_manifest_write" != true ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Warning: python3 not found; skipping ingestion manifest upsert."
+  elif [[ ! -f "$manifest_register_script" ]]; then
+    echo "Warning: manifest register script not found at '$manifest_register_script'; skipping upsert."
+  else
+    echo "1a) Upserting ingestion manifest mapping"
+    manifest_cmd=(python3 "$manifest_register_script" \
+      --doc-id "$doc_id" \
+      --source-uri "$source_uri" \
+      --db-path "$manifest_db" \
+      --status uploaded \
+      --kb-id "$kb_id" \
+      --data-source-id "$data_source_id")
+    if [[ -n "$source_etag" ]]; then
+      manifest_cmd+=(--source-etag "$source_etag")
+    fi
+    if [[ -n "$source_version_id" ]]; then
+      manifest_cmd+=(--source-version-id "$source_version_id")
+    fi
+    "${manifest_cmd[@]}"
+  fi
+fi
 
 description="Phase 1 smoke ingestion for ${doc_id}"
 echo "2) Starting ingestion job"

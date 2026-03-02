@@ -16,6 +16,8 @@ If this document conflicts with implementation reality, follow:
 ## Current Implemented Contract Tests
 
 - `tests/test_contract_fixtures.py`
+- `tests/test_ingestion_manifest_store.py`
+- `tests/test_retrieval_provenance_normalizer.py`
 - `tests/fixtures/query-request.unscoped.valid.json`
 - `tests/fixtures/query-request.scoped.valid.json`
 - `tests/fixtures/model-answer.valid.json`
@@ -36,8 +38,8 @@ Every invariant must map to at least one automated test. Matrix below is the can
 | GI-5 | `tests/unit/test_candidate_normalization.py::test_supports_text_and_visual` | `tests/integration/test_evidence_builder_pipeline.py::test_mixed_modality_bundle` | `tests/e2e/test_visual_queries.py::test_visual_question_uses_visual_evidence` |
 | IM-1 | `tests/unit/test_metadata_validation.py::test_required_provenance_keys` | `tests/integration/test_ingestion_verification.py::test_reports_missing_fields` | `tests/e2e/test_ingestion_smoke.py::test_ingested_items_have_required_metadata` |
 | IM-2 | `tests/unit/test_metadata_budget.py::test_enforces_size_and_key_limits` | `tests/integration/test_ingestion_verification.py::test_rejects_oversized_metadata` | `tests/e2e/test_ingestion_smoke.py::test_metadata_budget_respected` |
-| IM-3 | `tests/unit/test_evidence_serialization.py::test_preserves_provenance` | `tests/integration/test_evidence_builder_pipeline.py::test_provenance_survives_normalization` | `tests/e2e/test_multidoc_queries.py::test_provenance_present_in_response` |
-| IM-4 | `tests/unit/test_scoping.py::test_doc_id_semantics_consistent` | `tests/integration/test_retrieval_adapter.py::test_scope_matches_ingestion_doc_ids` | `tests/e2e/test_multidoc_queries.py::test_doc_id_stability_end_to_end` |
+| IM-3 | `tests/test_retrieval_provenance_normalizer.py::RetrievalProvenanceNormalizerTests::test_resolves_doc_id_from_source_uri` | `tests/integration/test_evidence_builder_pipeline.py::test_provenance_survives_normalization` | `tests/e2e/test_multidoc_queries.py::test_provenance_present_in_response` |
+| IM-4 | `tests/test_ingestion_manifest_store.py::IngestionManifestStoreTests::test_resolve_doc_id_from_source_uri_or_bucket_key` | `tests/integration/test_retrieval_adapter.py::test_scope_matches_ingestion_doc_ids` | `tests/e2e/test_multidoc_queries.py::test_doc_id_stability_end_to_end` |
 | RI-1 | `tests/unit/test_scoping.py::test_unscoped_mode_without_scope_field` | `tests/integration/test_retrieval_adapter.py::test_no_prefilter_in_unscoped_mode` | `tests/e2e/test_multidoc_queries.py::test_unscoped_includes_multiple_docs` |
 | RI-2 | `tests/unit/test_scoping.py::test_explicit_scope_only_from_request_scope` | `tests/integration/test_retrieval_adapter.py::test_scoped_filters_requested_docs_only` | `tests/e2e/test_multidoc_queries.py::test_scoped_excludes_out_of_scope_docs` |
 | RI-3 | `tests/unit/test_candidate_normalization.py::test_preserves_rank_and_score` | `tests/integration/test_evidence_builder_pipeline.py::test_rank_score_available_downstream` | `tests/e2e/test_multidoc_queries.py::test_retrieval_debug_contains_provenance` |
