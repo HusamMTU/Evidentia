@@ -48,7 +48,8 @@ One-page map of where core concepts live.
 ## Data and Assets
 
 - `assets/`: local static assets used by the project
-- `documents-raw/*`, `documents-assets/*`: storage paths described in infra docs (runtime in AWS)
+- `documents-raw/{doc_id}/source.pdf`: raw ingestion object path in S3
+- `aws/bedrock/knowledge_bases/{knowledge_base_id}/{data_source_id}/*`: Bedrock-managed extracted visual assets path in S3
 
 ## Change Reminders
 

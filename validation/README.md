@@ -29,7 +29,7 @@ validate_query_request(request_payload)
 
 evidence = [
     {"evidence_id": "E1", "doc_id": "doc-a", "asset_type": "text_chunk", "chunk_id": "c1", "snippet": "..."},  # simplified
-    {"evidence_id": "E2", "doc_id": "doc-b", "asset_type": "figure_image", "asset_id": "a9", "asset_s3_key": "documents-assets/doc-b/a9.png"},
+    {"evidence_id": "E2", "doc_id": "doc-b", "asset_type": "figure_image", "asset_id": "a9", "asset_s3_key": "aws/bedrock/knowledge_bases/XIGQDNLDYJ/YQOEPIG0FQ/0447d19a-02d5-41ba-8359-cef7ab48defc.png"},
 ]
 
 model_answer = {

@@ -4,9 +4,8 @@
   "doc_type": "inspection_report",
   "asset_type": "table_image",
   "asset_id": "asset-22-011",
-  "asset_s3_key": "documents-assets/insp-2024-22/asset-22-011.png",
+  "asset_s3_key": "aws/bedrock/knowledge_bases/XIGQDNLDYJ/YQOEPIG0FQ/0447d19a-02d5-41ba-8359-cef7ab48defc.png",
   "page": 9,
   "caption": "Table summarizing corrosion trigger thresholds by exposure type.",
-  "presigned_url": "https://example.com/presigned/documents-assets/insp-2024-22/asset-22-011.png?sig=abc123"
+  "presigned_url": "https://example.com/presigned/aws/bedrock/knowledge_bases/XIGQDNLDYJ/YQOEPIG0FQ/0447d19a-02d5-41ba-8359-cef7ab48defc.png?sig=abc123"
 }
-

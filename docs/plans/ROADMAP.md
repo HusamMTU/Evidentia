@@ -99,7 +99,7 @@ Goal: Provision the minimum AWS infrastructure required for ingestion and queryi
 
 - Create S3 bucket/prefix layout:
   - `documents-raw/{doc_id}/source.pdf`
-  - `documents-assets/{doc_id}/{asset_id}.png`
+  - `aws/bedrock/knowledge_bases/{knowledge_base_id}/{data_source_id}/{asset_uuid}.png` (Bedrock-managed extracted assets)
 - Create/Configure Bedrock Knowledge Base:
   - multimodal KB over unstructured docs
   - advanced parsing enabled
@@ -138,6 +138,7 @@ Goal: Make document ingestion reproducible and verify metadata quality.
   - chunks exist
   - visual assets extracted when present
   - metadata fields populated and joinable
+  - doc provenance mapping captured (`doc_id` <-> raw source URI/object key); do not derive `doc_id` from extracted asset key paths
 - Create a seed corpus (8-20 docs) covering:
   - text-heavy
   - table-heavy
@@ -200,7 +201,7 @@ Goal: Convert raw retrieval candidates into a high-quality cross-document eviden
   - map KB outputs into internal evidence item schema
   - assign stable evidence IDs (`E1`, `E2`, ...)
 - Implement deduplication:
-  - `(doc_id, asset_id)` for visuals
+  - `(doc_id, asset_id)` for visuals (`doc_id` sourced from metadata/provenance, not parsed from `asset_s3_key`)
   - `(doc_id, chunk_id)` for text
 - Implement bundle construction rules:
   - text snippets: target 2-8

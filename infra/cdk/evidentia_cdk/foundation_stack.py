@@ -19,7 +19,9 @@ from constructs import Construct
 
 
 RAW_PREFIX = "documents-raw"
-ASSETS_PREFIX = "documents-assets"
+BEDROCK_ASSETS_PREFIX_TEMPLATE = (
+    "aws/bedrock/knowledge_bases/{knowledge_base_id}/{data_source_id}/{asset_uuid}.png"
+)
 
 
 @dataclass(frozen=True)
@@ -601,7 +603,7 @@ class EvidentiaFoundationStack(Stack):
             "S3VectorsIndexName": vectors_index.ref,
             "S3VectorsIndexArn": vectors_index.attr_index_arn,
             "RawPrefixTemplate": f"{RAW_PREFIX}/{{doc_id}}/source.pdf",
-            "AssetsPrefixTemplate": f"{ASSETS_PREFIX}/{{doc_id}}/{{asset_id}}.png",
+            "AssetsPrefixTemplate": BEDROCK_ASSETS_PREFIX_TEMPLATE,
             "KnowledgeBaseRoleArn": kb_role.role_arn,
             "ApiRuntimeRoleArn": api_role.role_arn,
         }

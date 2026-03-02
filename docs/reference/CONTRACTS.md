@@ -21,6 +21,12 @@ Canonical shapes live only in `schemas/`.
 | Evidence item | `schemas/evidence-item.schema.json` | Normalized evidence object used in API response and citation resolution. |
 | Query response | `schemas/query-response.schema.json` | Final API payload shape (model answer + evidence + optional meta). |
 
+## Provenance Join Rule
+
+- Treat `evidence.asset_s3_key` as an opaque storage locator (do not parse business IDs from key shape).
+- `doc_id` must come from ingestion/retrieval provenance metadata and remain stable end-to-end.
+- For Bedrock-managed assets, key paths can omit `doc_id` (for example `aws/bedrock/knowledge_bases/<kb>/<ds>/<uuid>.png`); join logic must not depend on doc-id-in-path conventions.
+
 ## Validation Entry Points
 
 Implemented in `validation/validators.py`:

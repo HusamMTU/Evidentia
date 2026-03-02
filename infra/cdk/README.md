@@ -178,6 +178,16 @@ Resolution order in the script:
   - `BEDROCK_KNOWLEDGE_BASE_NAME` / `--kb-name`
   - `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` / `--data-source-name`
 
+Extracted asset key notes:
+
+- Bedrock-managed extracted assets are stored under a KB/data-source-scoped prefix, for example:
+  - `aws/bedrock/knowledge_bases/<knowledge_base_id>/<data_source_id>/<asset_uuid>.png`
+- Because these keys may not include `doc_id`, treat asset key as an opaque locator; keep `doc_id` linkage via ingestion/retrieval provenance metadata.
+- The smoke test checks both:
+  - legacy/doc-scoped prefix (`documents-assets/<doc_id>/...`) for backward compatibility
+  - Bedrock-managed prefix (`aws/bedrock/knowledge_bases/<kb_id>/<data_source_id>/...`)
+- For many documents, Bedrock assets can represent a larger page context around a figure/table, not only a tightly cropped object.
+
 Pass signal:
 
 - ingestion reaches `COMPLETE`

@@ -8,7 +8,7 @@ Usage:
 
 Options:
   --file <path>          Local PDF file to upload for smoke test (required)
-  --doc-id <id>          Document ID used in raw/assets prefixes (default: smoke-<utc timestamp>)
+  --doc-id <id>          Document ID used for raw object key and ingestion traceability (default: smoke-<utc timestamp>)
   --stack-name <name>    CloudFormation stack name (default: EvidentiaFoundation-dev)
   --region <region>      AWS region (required unless AWS_REGION/AWS_DEFAULT_REGION is set)
   --profile <profile>    AWS CLI profile to use
@@ -314,7 +314,8 @@ if ! data_source_exists "$kb_id" "$data_source_id"; then
 fi
 
 raw_key="documents-raw/${doc_id}/source.pdf"
-assets_prefix="documents-assets/${doc_id}/"
+legacy_assets_prefix="documents-assets/${doc_id}/"
+bedrock_assets_prefix="aws/bedrock/knowledge_bases/${kb_id}/${data_source_id}/"
 
 echo "Phase 1 Ingestion Smoke Test"
 echo "Stack: $stack_name"
@@ -428,28 +429,55 @@ if (( stats_failed > 0 )); then
   exit 1
 fi
 
-echo "4) Verifying assets prefix availability at s3://${assets_bucket}/${assets_prefix}"
-assets_key_count="$(aws "${aws_args[@]}" s3api list-objects-v2 \
+echo "4) Verifying assets availability"
+echo "  - checking legacy/doc-scoped prefix: s3://${assets_bucket}/${legacy_assets_prefix}"
+legacy_assets_key_count="$(aws "${aws_args[@]}" s3api list-objects-v2 \
   --bucket "$assets_bucket" \
-  --prefix "$assets_prefix" \
+  --prefix "$legacy_assets_prefix" \
   --query "KeyCount" \
   --output text)"
-assets_key_count="$(none_to_zero "$assets_key_count")"
+legacy_assets_key_count="$(none_to_zero "$legacy_assets_key_count")"
 
-if (( assets_key_count > 0 )); then
-  echo "  - assets found: ${assets_key_count}"
+if (( legacy_assets_key_count > 0 )); then
+  echo "  - legacy prefix assets found: ${legacy_assets_key_count}"
   asset_keys="$(aws "${aws_args[@]}" s3api list-objects-v2 \
     --bucket "$assets_bucket" \
-    --prefix "$assets_prefix" \
+    --prefix "$legacy_assets_prefix" \
     --max-items 5 \
     --query "Contents[].Key" \
     --output text || true)"
   if [[ -n "$asset_keys" && "$asset_keys" != "None" ]]; then
-    echo "  - sample asset keys: $asset_keys"
+    echo "  - legacy sample asset keys: $asset_keys"
   fi
 else
-  echo "  - no extracted assets found for this document (possible for text-only PDFs)."
+  echo "  - no legacy/doc-scoped assets found."
 fi
+
+echo "  - checking Bedrock-managed prefix: s3://${assets_bucket}/${bedrock_assets_prefix}"
+bedrock_assets_key_count="$(aws "${aws_args[@]}" s3api list-objects-v2 \
+  --bucket "$assets_bucket" \
+  --prefix "$bedrock_assets_prefix" \
+  --query "KeyCount" \
+  --output text)"
+bedrock_assets_key_count="$(none_to_zero "$bedrock_assets_key_count")"
+
+if (( bedrock_assets_key_count > 0 )); then
+  echo "  - bedrock-managed assets found: ${bedrock_assets_key_count}"
+  bedrock_asset_keys="$(aws "${aws_args[@]}" s3api list-objects-v2 \
+    --bucket "$assets_bucket" \
+    --prefix "$bedrock_assets_prefix" \
+    --max-items 5 \
+    --query "Contents[].Key" \
+    --output text || true)"
+  if [[ -n "$bedrock_asset_keys" && "$bedrock_asset_keys" != "None" ]]; then
+    echo "  - bedrock sample asset keys: $bedrock_asset_keys"
+  fi
+else
+  echo "  - no Bedrock-managed assets found under the KB/data source prefix."
+  echo "    (Text-only PDFs can legitimately produce zero extracted visual assets.)"
+fi
+
+assets_key_count=$((legacy_assets_key_count + bedrock_assets_key_count))
 
 echo
 echo "Smoke test PASS"
@@ -458,4 +486,6 @@ echo "  raw_s3_uri=s3://${raw_bucket}/${raw_key}"
 echo "  ingestion_job_id=${ingestion_job_id}"
 echo "  final_status=${final_status}"
 echo "  scanned=${stats_scanned} new=${stats_new} modified=${stats_modified} failed=${stats_failed}"
-echo "  assets_key_count=${assets_key_count}"
+echo "  legacy_assets_key_count=${legacy_assets_key_count}"
+echo "  bedrock_assets_key_count=${bedrock_assets_key_count}"
+echo "  assets_key_count_total=${assets_key_count}"
