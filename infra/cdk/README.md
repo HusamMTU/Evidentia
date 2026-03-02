@@ -57,9 +57,11 @@ flowchart LR
   APIR["IAM Role: ApiRuntimeRole"] -.assumed by.-> API
 ```
 
-## Setup and Deploy
+## Setup, Deploy, and Sync `.env`
 
-Use this flow for first-time setup and deployment. It keeps account/region explicit and loads `.env` for context/env-driven values.
+Use this flow for first-time setup and for redeploy after cleanup.
+
+1. Deploy full foundation + KB/data source from `infra/cdk`:
 
 ```bash
 cd infra/cdk
@@ -73,39 +75,30 @@ export CDK_DEFAULT_ACCOUNT="$(aws sts get-caller-identity --query Account --outp
 export CDK_DEFAULT_REGION="$AWS_REGION"
 
 cdk bootstrap "aws://${CDK_DEFAULT_ACCOUNT}/${CDK_DEFAULT_REGION}"
-cdk synth --app ".venv/bin/python app.py" -c stage=dev
-cdk deploy --app ".venv/bin/python app.py" -c stage=dev
+cdk synth --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
+cdk deploy --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
 ```
 
-Deploy variants:
-
-- Full project deployment (recommended):
+Troubleshooting-only variant (foundation resources without KB/data source):
 
 ```bash
-cdk deploy --app ".venv/bin/python app.py" \
-  -c stage=dev \
-  -c enableBedrockKb=true
+cdk deploy --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=false
 ```
 
-- Foundation-only troubleshooting mode:
-
-```bash
-cdk deploy --app ".venv/bin/python app.py" \
-  -c stage=dev \
-  -c enableBedrockKb=false
-```
-
-## Populate `.env` From Stack Outputs
-
-Use `.env.example` as a template and put real values in `.env` (do not edit committed placeholders in `.env.example`).
-
-From repo root:
+2. Sync runtime `.env` values from stack outputs (run from repo root):
 
 ```bash
 cp .env.example .env   # first time only
+./scripts/sync_env_from_stack.sh --region us-east-1 --stack-name EvidentiaFoundation-dev
 ```
 
-After deploy, populate `.env` with stack outputs:
+Use `--dry-run` first if you want to preview updates:
+
+```bash
+./scripts/sync_env_from_stack.sh --region us-east-1 --stack-name EvidentiaFoundation-dev --dry-run
+```
+
+`.env` keys synced from outputs:
 
 | CloudFormation Output | `.env` key | Notes |
 | --- | --- | --- |
@@ -115,13 +108,52 @@ After deploy, populate `.env` with stack outputs:
 | `ApiRuntimeRoleArn` | `EVIDENTIA_API_ROLE_ARN` | Runtime role wiring |
 | `BedrockKnowledgeBaseId` | `BEDROCK_KNOWLEDGE_BASE_ID` | Present when `enableBedrockKb=true` |
 | `BedrockKnowledgeBaseDataSourceId` | `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID` | Present when `enableBedrockKb=true` |
-| `S3VectorsIndexName` | `BEDROCK_S3_VECTORS_INDEX_NAME` | Index name used by KB storage config |
+| `S3VectorsIndexName` | `BEDROCK_S3_VECTORS_INDEX_NAME` | Runtime index name reference from stack output (do not use as deploy-time override) |
+
+Sync behavior notes:
+
+- Updates runtime keys in `.env` from current stack outputs.
+- Clears `BEDROCK_KNOWLEDGE_BASE_ID` and `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID` when those outputs are absent (for example foundation-only deploy), preventing stale references.
+- Does not modify `INFRA_*` deploy-time override names.
 
 Set these manually (not emitted as stack outputs):
 
 - `BEDROCK_EMBEDDING_MODEL_ARN` (the embedding model ARN you choose)
 - `BEDROCK_KNOWLEDGE_BASE_NAME` (if you want explicit app-level naming)
 - `CLAUDE_MODEL_ID` (Phase 5 model invocation)
+
+## Phase 1 Smoke Test (Upload + Ingestion)
+
+Run this from repo root to verify the Phase 1 gate path:
+
+```bash
+./scripts/phase1_ingestion_smoke_test.sh \
+  --region us-east-1 \
+  --stack-name EvidentiaFoundation-dev \
+  --file /absolute/path/to/sample.pdf
+```
+
+What it does:
+
+- uploads the PDF to `documents-raw/<doc_id>/source.pdf`
+- starts a Bedrock KB ingestion job for your configured data source
+- polls until completion/failure with ingestion stats
+- checks assets prefix availability under `documents-assets/<doc_id>/`
+
+Resource resolution order:
+
+- first from `.env` (`EVIDENTIA_RAW_BUCKET`, `EVIDENTIA_ASSETS_BUCKET`, `BEDROCK_KNOWLEDGE_BASE_ID`, `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID`)
+- fallback to CloudFormation stack outputs when missing
+- if `.env` points to stale/deleted resources, the scrischemaspt falls back to current stack outputs when possible and prints a warning
+- if KB IDs are unavailable (for example foundation-only stack deploy), it can resolve by names:
+  - `BEDROCK_KNOWLEDGE_BASE_NAME` / `--kb-name`
+  - `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` / `--data-source-name`
+
+Pass signal:
+
+- ingestion job reaches `COMPLETE`
+- at least one document is indexed/modified in job statistics
+- assets path check succeeds (asset count may be zero for text-only PDFs)
 
 ## Destroy Stack
 
@@ -140,6 +172,29 @@ Important:
 
 - The stack uses `RETAIN` policies for storage resources, so destroy may leave S3/S3 Vectors resources behind by design.
 - Use the cleanup scripts in this README when you need to remove retained buckets/vector buckets after stack destroy.
+
+## Redeploy From Clean State (Recommended Sequence)
+
+If you destroyed the stack and cleaned retained buckets/vector buckets, use this sequence:
+
+```bash
+cd infra/cdk
+. .venv/bin/activate
+set -a; source ../../.env; set +a
+
+export AWS_REGION=us-east-1
+export CDK_DEFAULT_ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+export CDK_DEFAULT_REGION="$AWS_REGION"
+
+cdk synth --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
+cdk deploy --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
+```
+
+Notes:
+
+- Do not hardcode `knowledgeBaseName` / `knowledgeBaseDataSourceName` unless you need fixed names.
+- By default, the stack now derives stack-scoped KB/data source names to reduce collisions with stale resources.
+- After deploy, refresh `.env` runtime values from CloudFormation outputs (`RawBucketName`, `AssetsBucketName`, `VectorsBucketArn`, `ApiRuntimeRoleArn`, `BedrockKnowledgeBaseId`, `BedrockKnowledgeBaseDataSourceId`).
 
 If your `.env` file uses plain `KEY=value` lines (no `export` prefix), use:
 
@@ -167,10 +222,11 @@ Optional CDK context values are shown below. Each value can also be provided via
 | `assetsBucketName` | `INFRA_ASSETS_BUCKET_NAME` | Explicit S3 bucket name for extracted visual assets. If omitted, CloudFormation generates one. | CloudFormation-generated | No |
 | `vectorsBucketName` | `INFRA_VECTORS_BUCKET_NAME` | Explicit **S3 Vector Bucket** name (`AWS::S3Vectors::VectorBucket`). If omitted, CloudFormation generates one. | CloudFormation-generated | No |
 | `enableBedrockKb` | `EVIDENTIA_ENABLE_BEDROCK_KB` | Toggles creation of Bedrock Knowledge Base and S3 data source resources. Set to `true` for full project deployment. | `false` | No |
-| `knowledgeBaseName` | `BEDROCK_KNOWLEDGE_BASE_NAME` | Name for the Bedrock Knowledge Base resource. | `evidentia-kb-{stage}` | No |
-| `knowledgeBaseDataSourceName` | `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` | Name for the Bedrock S3 data source attached to the KB. | `evidentia-raw-s3-{stage}` | No |
+| `knowledgeBaseName` | `BEDROCK_KNOWLEDGE_BASE_NAME` | Optional explicit name for the Bedrock Knowledge Base resource. If unset, CDK derives a hashed name to reduce replacement collisions. | derived `<stack>-kb-<hash8>` | No |
+| `knowledgeBaseDataSourceName` | `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` | Optional explicit name for the Bedrock S3 data source attached to the KB. If unset, CDK derives a hashed name to reduce replacement collisions. | derived `<stack>-raw-s3-<hash8>` | No |
 | `embeddingModelArn` | `BEDROCK_EMBEDDING_MODEL_ARN` | ARN of the embedding model used by the vector KB configuration. | None | Yes, if `enableBedrockKb=true` |
-| `s3VectorsIndexName` | `BEDROCK_S3_VECTORS_INDEX_NAME` | Name of the S3 Vectors index resource. If omitted, stack uses `evidentia-{stage}-index`. | `evidentia-{stage}-index` | No |
+| `s3VectorsIndexName` | `INFRA_S3_VECTORS_INDEX_NAME` | Explicit S3 Vectors index name override. Keep unset unless you intentionally pin naming. | derived `evidentia-{stage}-index-{hash8}` | No |
+| `s3VectorsNonFilterableMetadataKeys` | `INFRA_S3_VECTORS_NON_FILTERABLE_METADATA_KEYS` | Comma-separated metadata keys marked non-filterable on the S3 Vectors index. Prevents Bedrock ingestion failures on oversized filterable metadata. | `AMAZON_BEDROCK_TEXT,AMAZON_BEDROCK_METADATA` | No |
 | `s3VectorsDataType` | `BEDROCK_S3_VECTORS_DATA_TYPE` | Vector data type for the S3 Vectors index. | `float32` | No |
 | `s3VectorsDimension` | `BEDROCK_S3_VECTORS_DIMENSION` | Embedding vector dimension for the S3 Vectors index (must match embedding model output dimension). | `1024` | No |
 | `s3VectorsDistanceMetric` | `BEDROCK_S3_VECTORS_DISTANCE_METRIC` | Similarity metric for the S3 Vectors index. | `cosine` | No |
@@ -193,7 +249,6 @@ cdk deploy --app ".venv/bin/python app.py" \
   -c stage=dev \
   -c enableBedrockKb=true \
   -c embeddingModelArn=arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0 \
-  -c s3VectorsIndexName=evidentia-dev-index \
   -c s3VectorsDataType=float32 \
   -c s3VectorsDimension=1024 \
   -c s3VectorsDistanceMetric=cosine \
@@ -202,7 +257,7 @@ cdk deploy --app ".venv/bin/python app.py" \
 
 Important:
 
-- Deploy-time explicit bucket names are read from context keys or `INFRA_*` environment variables.
+- Deploy-time explicit bucket/index names are read from context keys or `INFRA_*` environment variables.
 - Runtime output values such as `EVIDENTIA_RAW_BUCKET` should not be reused as deploy-time explicit names unless you intentionally want custom-named immutable resources.
 
 ## Outputs

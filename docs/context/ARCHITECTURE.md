@@ -1,178 +1,109 @@
 # Architecture Overview
 
-This system implements a **multi-document multimodal grounded QA engine**.
+This document is the canonical architecture reference. It explains how the system works and why the design is structured this way.
 
-Multi-document support is **default behavior**, not an extension.
+## Architectural Intent
 
----
+- Preserve multi-document behavior as the default execution path.
+- Keep retrieval/evidence assembly deterministic and inspectable.
+- Isolate generation from retrieval decisions.
+- Enforce grounded outputs through post-generation validation.
 
-# High-Level Flow
+## Core Components
 
-## Ingestion Path
+- Ingestion surface (document registration/upload)
+- Raw document storage (S3 raw prefix)
+- Knowledge base ingestion/parsing (Bedrock KB + advanced parsing)
+- Vector retrieval backend (S3 Vectors)
+- Retrieval adapter
+- Evidence builder + reranker
+- Model invocation orchestrator
+- Output validation layer
+- API response assembly layer
+- Observability/telemetry layer
 
-1. Raw documents → `documents-raw/`
-2. Bedrock Knowledge Base ingestion
-3. Advanced parsing extracts visuals → `documents-assets/`
-4. Text + assets embedded → S3 Vectors
+## End-to-End Flow
 
----
+### Ingestion Path
 
-## Query Path
+1. Documents are stored in raw storage.
+2. Knowledge base ingestion parses and chunks content.
+3. Visual artifacts are extracted to asset storage.
+4. Text and visual representations are embedded and indexed.
+5. Metadata is preserved for downstream provenance.
 
-1. User query → API
-2. KB Retrieve (multi-document)
-3. Evidence Builder (merge + rerank)
-4. Claude Vision invocation
-5. JSON answer + evidence returned
+Why:
 
----
+- Separates source-of-record content from derived artifacts.
+- Enables multimodal retrieval and citation traceability.
+- Keeps ingestion reproducible and diagnosable.
 
-# Storage Layer
+### Query Path
 
-## Raw Documents
+1. API receives the user query.
+2. Scope resolver determines scoped vs unscoped execution.
+3. Retrieval adapter pulls candidates from the KB/vector backend.
+4. Evidence builder normalizes, deduplicates, and reranks candidates.
+5. Selected evidence is passed to the model orchestrator.
+6. Model output is validated and cross-checked against evidence IDs.
+7. Final response is assembled and returned with evidence payload.
 
-S3: `documents-raw/{doc_id}/source.pdf`
+Why:
 
-## Extracted Assets
+- Retrieval/evidence selection remains deterministic and testable.
+- Model is constrained to selected evidence rather than raw corpus state.
+- Validation catches schema/citation drift before response delivery.
 
-S3: `documents-assets/{doc_id}/{asset_id}.png`
+## Determinism Boundaries
 
----
+Deterministic stages:
 
-# Knowledge Base Layer
+- Scope resolution
+- Retrieval request construction
+- Evidence normalization/deduplication/reranking
+- Response validation and citation integrity checks
 
-* Multimodal KB over unstructured docs
-* Advanced parsing enabled
-* Vector store: S3 Vectors
-* Metadata kept minimal but joinable
+Non-deterministic stage:
 
----
+- LLM text generation
 
-# Retrieval Strategy
+Design control:
 
-## Default Behavior
+- Non-deterministic generation is bounded by deterministic evidence and strict validation.
 
-* Retrieve across all documents.
-* Do not pre-filter by `doc_id`.
+## Security Architecture
 
-## Scoped Queries
+- Principle of least privilege between KB role and API runtime role.
+- Short-lived presigned URLs for visual asset access.
+- Separation of raw storage, derived assets, and vector resources.
+- Validation and logging designed to avoid leaking sensitive raw context.
 
-If query includes:
+## Observability Architecture
 
-* Explicit document identifier
-* UI document selection
+The system emits telemetry at stage boundaries to support attribution of failures to:
 
-Then filter by `doc_id`.
+- ingestion/data quality
+- retrieval
+- evidence builder/reranking
+- model generation
+- output validation
 
----
+It also tracks multi-document participation and citation quality signals for regression detection.
 
-# Evidence Builder
+## Evolution Constraints
 
-## Responsibilities
+Architecture changes must preserve:
 
-* Merge multi-pass retrieval results
-* Group by `(doc_id, asset_id)` or `(doc_id, chunk_id)`
-* Limit per-document dominance
-* Preserve cross-document diversity
+- Multi-document default behavior
+- Deterministic retrieval/evidence assembly
+- Evidence-bounded generation
+- Strong citation traceability
+- Server-side validation gates before response return
 
-## Per-Document Caps (MVP)
-
-* Max 3 text snippets per doc
-* Max 2 visuals per doc
-* Max total visuals: 3
-
----
-
-# Bundle Types
-
-1. Text-only
-2. Visual-led
-3. Table-led
-4. Cross-document comparison
-
-Bundles may contain multiple `doc_id`s.
-
----
-
-# Reranking Signals
-
-* Rank fusion
-* Modality match
-* Explicit numeric reference
-* Evidence density
-* Cross-document support consistency
-
----
-
-# Claude Invocation Layer
-
-Input:
-
-* Question
-* Evidence list (text + images)
-
-Instructions:
-
-* Only use evidence
-* Cite evidence IDs
-* Output strict JSON
-
-Validation:
-
-* Reject non-JSON responses
-* Validate citation references exist
-
----
-
-# Citation Model
-
-Each evidence item includes:
-
-For text:
-
-* `doc_id`
-* `chunk_id`
-* `page`
-* snippet
-
-For visuals:
-
-* `doc_id`
-* `asset_id`
-* `asset_s3_key`
-* caption (if present)
-* presigned URL
-
----
-
-# Security Model
-
-* KB role: read raw docs, write assets, write vectors
-* API role: retrieve from KB, read asset bucket for presigning, invoke Claude
-* Presigned URLs expire within short window
-
----
-
-# Observability
-
-Track:
-
-* Retrieval coverage per doc
-* Number of docs contributing to answer
-* Evidence bundle size
-* Citation precision errors
-* Insufficient evidence responses
-
----
-
-# Multi-Document First-Class Requirements
-
-The system must:
-
-* Aggregate evidence across documents.
-* Support cross-document comparison questions.
-* Cite document identifiers explicitly.
-* Prevent single-document dominance unless query explicitly scoped.
-* Allow balanced synthesis from heterogeneous sources.
-
-No architectural change should be required to support cross-document QA.
+## Related References
+
+- Product goals/non-goals: `docs/context/SYSTEM.md`
+- Hard invariants: `docs/context/SYSTEM_INVARIANTS.md`
+- Canonical shapes: `schemas/*.schema.json`
+- Contracts index + validation sequence: `docs/reference/CONTRACTS.md`
+- Test strategy: `docs/reference/TEST_STRATEGY.md`

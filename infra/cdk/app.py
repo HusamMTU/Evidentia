@@ -61,7 +61,20 @@ knowledge_base_data_source_name = _context_or_env(
     app, "knowledgeBaseDataSourceName", "BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME"
 )
 embedding_model_arn = _context_or_env(app, "embeddingModelArn", "BEDROCK_EMBEDDING_MODEL_ARN")
-s3_vectors_index_name = _context_or_env(app, "s3VectorsIndexName", "BEDROCK_S3_VECTORS_INDEX_NAME")
+s3_vectors_index_name = _context_or_env(app, "s3VectorsIndexName", "INFRA_S3_VECTORS_INDEX_NAME")
+s3_vectors_non_filterable_metadata_keys_raw = _context_or_env(
+    app,
+    "s3VectorsNonFilterableMetadataKeys",
+    "INFRA_S3_VECTORS_NON_FILTERABLE_METADATA_KEYS",
+)
+s3_vectors_non_filterable_metadata_keys = (
+    tuple(
+        key.strip()
+        for key in (s3_vectors_non_filterable_metadata_keys_raw or "").split(",")
+        if key.strip()
+    )
+    or None
+)
 s3_vectors_data_type = (
     _context_or_env(app, "s3VectorsDataType", "BEDROCK_S3_VECTORS_DATA_TYPE", "float32")
     or "float32"
@@ -104,6 +117,7 @@ EvidentiaFoundationStack(
     knowledge_base_data_source_name=knowledge_base_data_source_name,
     embedding_model_arn=embedding_model_arn,
     s3_vectors_index_name=s3_vectors_index_name,
+    s3_vectors_non_filterable_metadata_keys=s3_vectors_non_filterable_metadata_keys,
     s3_vectors_data_type=s3_vectors_data_type,
     s3_vectors_dimension=s3_vectors_dimension,
     s3_vectors_distance_metric=s3_vectors_distance_metric,

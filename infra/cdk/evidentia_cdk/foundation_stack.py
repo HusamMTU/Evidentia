@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import re
 
 from aws_cdk import (
     CfnOutput,
@@ -32,6 +34,7 @@ class FoundationStackProps:
     knowledge_base_data_source_name: str | None = None
     embedding_model_arn: str | None = None
     s3_vectors_index_name: str | None = None
+    s3_vectors_non_filterable_metadata_keys: tuple[str, ...] | None = None
     s3_vectors_data_type: str = "float32"
     s3_vectors_dimension: int = 1024
     s3_vectors_distance_metric: str = "cosine"
@@ -43,9 +46,8 @@ class FoundationStackProps:
 class EvidentiaFoundationStack(Stack):
     """Phase 1 foundation resources for Evidentia.
 
-    This stack intentionally focuses on storage + IAM first. Bedrock Knowledge Base
-    resources are added in a follow-up once CDK/CloudFormation support is pinned
-    for the target account/region and S3 Vectors configuration shape is confirmed.
+    This stack provisions storage, IAM, and (optionally) Bedrock KB resources for
+    phased rollouts and troubleshooting.
     """
 
     def __init__(
@@ -63,6 +65,7 @@ class EvidentiaFoundationStack(Stack):
         knowledge_base_data_source_name: str | None = None,
         embedding_model_arn: str | None = None,
         s3_vectors_index_name: str | None = None,
+        s3_vectors_non_filterable_metadata_keys: tuple[str, ...] | None = None,
         s3_vectors_data_type: str = "float32",
         s3_vectors_dimension: int = 1024,
         s3_vectors_distance_metric: str = "cosine",
@@ -84,6 +87,7 @@ class EvidentiaFoundationStack(Stack):
             knowledge_base_data_source_name=knowledge_base_data_source_name,
             embedding_model_arn=embedding_model_arn,
             s3_vectors_index_name=s3_vectors_index_name,
+            s3_vectors_non_filterable_metadata_keys=s3_vectors_non_filterable_metadata_keys,
             s3_vectors_data_type=s3_vectors_data_type,
             s3_vectors_dimension=s3_vectors_dimension,
             s3_vectors_distance_metric=s3_vectors_distance_metric,
@@ -106,6 +110,7 @@ class EvidentiaFoundationStack(Stack):
             stage_name=props.stage_name,
             vector_bucket_name=props.vectors_bucket_name,
             index_name=props.s3_vectors_index_name,
+            non_filterable_metadata_keys=props.s3_vectors_non_filterable_metadata_keys,
             data_type=props.s3_vectors_data_type,
             dimension=props.s3_vectors_dimension,
             distance_metric=props.s3_vectors_distance_metric,
@@ -159,6 +164,7 @@ class EvidentiaFoundationStack(Stack):
         stage_name: str,
         vector_bucket_name: str | None,
         index_name: str | None,
+        non_filterable_metadata_keys: tuple[str, ...] | None,
         data_type: str,
         dimension: int,
         distance_metric: str,
@@ -171,7 +177,25 @@ class EvidentiaFoundationStack(Stack):
         vector_bucket.cfn_options.deletion_policy = CfnDeletionPolicy.RETAIN
         vector_bucket.cfn_options.update_replace_policy = CfnDeletionPolicy.RETAIN
 
-        effective_index_name = index_name or f"evidentia-{stage_name}-index"
+        # Bedrock KB ingestion often writes large chunk/context metadata; without
+        # these keys marked non-filterable, S3 Vectors can fail at 2KB filterable
+        # metadata limits.
+        effective_non_filterable_keys = tuple(
+            key for key in (non_filterable_metadata_keys or ()) if key.strip()
+        ) or (
+            "AMAZON_BEDROCK_TEXT",
+            "AMAZON_BEDROCK_METADATA",
+        )
+        if index_name:
+            effective_index_name = self._normalize_s3vectors_index_name(index_name)
+        else:
+            effective_index_name = self._default_s3vectors_index_name(
+                stage_name=stage_name,
+                data_type=data_type,
+                dimension=dimension,
+                distance_metric=distance_metric,
+                non_filterable_metadata_keys=effective_non_filterable_keys,
+            )
         vector_index = s3vectors.CfnIndex(
             self,
             "S3VectorsIndex",
@@ -180,6 +204,9 @@ class EvidentiaFoundationStack(Stack):
             distance_metric=distance_metric.lower(),
             index_name=effective_index_name,
             vector_bucket_arn=vector_bucket.attr_vector_bucket_arn,
+            metadata_configuration=s3vectors.CfnIndex.MetadataConfigurationProperty(
+                non_filterable_metadata_keys=list(effective_non_filterable_keys)
+            ),
         )
         vector_index.cfn_options.deletion_policy = CfnDeletionPolicy.RETAIN
         vector_index.cfn_options.update_replace_policy = CfnDeletionPolicy.RETAIN
@@ -267,6 +294,17 @@ class EvidentiaFoundationStack(Stack):
                 resources=["*"],
             )
         )
+        # Required when advanced parsing uses BEDROCK_DATA_AUTOMATION.
+        role.add_to_policy(
+            iam.PolicyStatement(
+                sid="BedrockDataAutomationRuntime",
+                actions=[
+                    "bedrock:InvokeDataAutomationAsync",
+                    "bedrock:GetDataAutomationStatus",
+                ],
+                resources=["*"],
+            )
+        )
         role.add_to_policy(
             iam.PolicyStatement(
                 sid="S3VectorsPermissions",
@@ -339,8 +377,25 @@ class EvidentiaFoundationStack(Stack):
                 "enable_bedrock_kb=True requires embedding_model_arn "
                 "(context: embeddingModelArn or env: BEDROCK_EMBEDDING_MODEL_ARN)"
             )
-        kb_name = knowledge_base_name or f"evidentia-kb-{stage_name}"
-        ds_name = knowledge_base_data_source_name or f"evidentia-raw-s3-{stage_name}"
+        kb_name = knowledge_base_name or self._default_bedrock_resource_name(
+            suffix="kb",
+            stage_name=stage_name,
+            fingerprint_seed="|".join(
+                [
+                    "kb-v2",
+                    stage_name,
+                    embedding_model_arn,
+                    advanced_parsing_strategy or "",
+                    advanced_parsing_model_arn or "",
+                    advanced_parsing_modality or "",
+                ]
+            ),
+        )
+        ds_name = knowledge_base_data_source_name or self._default_bedrock_resource_name(
+            suffix="raw-s3",
+            stage_name=stage_name,
+            fingerprint_seed=f"ds-v2|{stage_name}|{RAW_PREFIX}",
+        )
         parsing_strategy = (advanced_parsing_strategy or "").strip().upper()
 
         vector_kb_config_kwargs: dict[str, object] = {"embedding_model_arn": embedding_model_arn}
@@ -358,25 +413,28 @@ class EvidentiaFoundationStack(Stack):
                 )
             )
 
-        knowledge_base = bedrock.CfnKnowledgeBase(
-            self,
-            "BedrockKnowledgeBase",
-            name=kb_name,
-            role_arn=kb_role.role_arn,
-            description="Evidentia multimodal grounded document intelligence knowledge base.",
-            knowledge_base_configuration=bedrock.CfnKnowledgeBase.KnowledgeBaseConfigurationProperty(
+        kb_props: dict[str, object] = {
+            "name": kb_name,
+            "role_arn": kb_role.role_arn,
+            "description": "Evidentia multimodal grounded document intelligence knowledge base.",
+            "knowledge_base_configuration": bedrock.CfnKnowledgeBase.KnowledgeBaseConfigurationProperty(
                 type="VECTOR",
                 vector_knowledge_base_configuration=bedrock.CfnKnowledgeBase.VectorKnowledgeBaseConfigurationProperty(
                     **vector_kb_config_kwargs
                 ),
             ),
-            storage_configuration=bedrock.CfnKnowledgeBase.StorageConfigurationProperty(
+            "storage_configuration": bedrock.CfnKnowledgeBase.StorageConfigurationProperty(
                 type="S3_VECTORS",
                 s3_vectors_configuration=bedrock.CfnKnowledgeBase.S3VectorsConfigurationProperty(
                     vector_bucket_arn=vectors_bucket.attr_vector_bucket_arn,
                     index_arn=vectors_index.attr_index_arn,
                 ),
             ),
+        }
+        knowledge_base = bedrock.CfnKnowledgeBase(
+            self,
+            "BedrockKnowledgeBase",
+            **kb_props,
         )
         kb_default_policy = kb_role.node.try_find_child("DefaultPolicy")
         if kb_default_policy is not None:
@@ -455,6 +513,69 @@ class EvidentiaFoundationStack(Stack):
                 **parsing_configuration_kwargs
             )
         )
+
+    @staticmethod
+    def _normalize_s3vectors_index_name(value: str) -> str:
+        # S3 Vectors index names are stricter than generic Bedrock resource names.
+        # Keep only lowercase alnum/hyphen and enforce a practical bounded length.
+        normalized = re.sub(r"[^a-z0-9-]", "-", value.strip().lower())
+        normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
+        if not normalized:
+            normalized = "evidentia-index"
+        if not normalized[0].isalnum():
+            normalized = f"idx-{normalized}"
+        normalized = normalized[:63].strip("-")
+        if len(normalized) < 3:
+            normalized = (normalized + "-ix")[:3]
+        return normalized
+
+    def _default_bedrock_resource_name(
+        self,
+        *,
+        suffix: str,
+        stage_name: str,
+        fingerprint_seed: str,
+    ) -> str:
+        # Bedrock resources require a name at this CDK version.
+        # Include a deterministic fingerprint so replacements can adopt a new
+        # physical name when configuration changes.
+        stack_part = self._normalize_bedrock_name_token(self.stack_name, max_len=65)
+        suffix_part = self._normalize_bedrock_name_token(suffix, max_len=20)
+        fingerprint = hashlib.sha1(fingerprint_seed.encode("utf-8")).hexdigest()[:8]
+        name = f"{stack_part}-{suffix_part}-{fingerprint}"
+        return name[:100].strip("-")
+
+    @staticmethod
+    def _normalize_bedrock_name_token(value: str, *, max_len: int) -> str:
+        normalized = re.sub(r"[^0-9A-Za-z-]", "-", value).strip("-")
+        normalized = re.sub(r"-{2,}", "-", normalized)
+        if not normalized:
+            normalized = "evidentia"
+        return normalized[:max_len]
+
+    def _default_s3vectors_index_name(
+        self,
+        *,
+        stage_name: str,
+        data_type: str,
+        dimension: int,
+        distance_metric: str,
+        non_filterable_metadata_keys: tuple[str, ...],
+    ) -> str:
+        stage_part = self._normalize_s3vectors_index_name(stage_name)
+        fingerprint_input = "|".join(
+            [
+                self.stack_name,
+                stage_name,
+                data_type.lower(),
+                str(dimension),
+                distance_metric.lower(),
+                ",".join(non_filterable_metadata_keys),
+            ]
+        )
+        fingerprint = hashlib.sha1(fingerprint_input.encode("utf-8")).hexdigest()[:8]
+        candidate = f"evidentia-{stage_part}-index-{fingerprint}"
+        return self._normalize_s3vectors_index_name(candidate)
 
     def _emit_outputs(
         self,

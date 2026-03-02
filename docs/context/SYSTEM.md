@@ -1,211 +1,59 @@
-# System Overview
+# System Product Spec
 
-Build a **Multimodal Grounded Document Intelligence System** that answers questions using:
+## Product Vision
 
-* Text
-* Tables
-* Figures
-* Charts
-* Diagrams
-* Embedded images
+Build a multimodal, grounded document intelligence system that answers questions from mixed document corpora (text, tables, figures, charts, diagrams, embedded images) with traceable evidence.
 
-The system supports **multi-document reasoning by default** and produces answers with **explicit, structured citations** to all supporting evidence.
+## Product Goals
 
----
+- Multi-document reasoning is the default user experience.
+- Answers are grounded in retrieved evidence, not unstated external facts.
+- Text and visual evidence are both first-class inputs.
+- Outputs are auditable and citation-backed for enterprise use.
+- Retrieval and evidence assembly are deterministic and reliable.
 
-# Core Guarantees
+## High-Level Guarantees
 
-1. **Evidence-First**
-   The model never answers without retrieved evidence.
+1. Evidence-first answering.
+2. Multi-document default behavior.
+3. Modality-agnostic evidence handling.
+4. Traceable claims via evidence citations.
+5. Deterministic retrieval/evidence assembly independent of LLM behavior.
 
-2. **Multi-Document by Default**
-   Retrieval and reasoning operate across all indexed documents unless explicitly scoped.
+## Supported Document Landscape
 
-3. **Modality-Agnostic**
-   Text and visual elements are treated as equal evidence sources.
+The product is designed for heterogeneous document collections, including research papers, technical manuals, contracts, inspection reports, compliance artifacts, enterprise reports, slide-deck PDFs, and mixed-media documents.
 
-4. **Traceable Outputs**
-   Every non-trivial claim must cite one or more evidence items with document identifiers.
+## Primary User Outcomes
 
-5. **Deterministic Retrieval Layer**
-   Retrieval and evidence assembly are deterministic and independent of the LLM.
+- Ask comparative questions across multiple documents.
+- Get grounded answers with clear supporting evidence.
+- Identify uncertainty/limitations instead of forced certainty.
+- Review evidence provenance for audit and decision support.
 
----
+## Non-Goals (MVP)
 
-# Supported Document Types
+- Full document knowledge graph
+- Advanced contradiction detection
+- Automated table normalization
+- Fine-tuned reranking model
 
-System must support heterogeneous documents:
+## Success Signals (Product-Level)
 
-* Research papers
-* Technical manuals
-* Contracts
-* Inspection reports
-* Compliance documents
-* Enterprise reports
-* Slide decks (PDF)
-* Mixed-media documents
+- Strong evidence recall for relevant questions.
+- High citation precision and low unresolved citation rate.
+- Reliable cross-document synthesis on comparison queries.
+- Low unsupported-claim (hallucination) rate.
 
-The system must not assume:
+## Documentation Boundaries
 
-* Academic structure
-* Fixed section names
-* Presence of “Figure 1” patterns
-* Single-document scope
+This document is intentionally high-level (product intent only).
 
----
+For enforceable/system-specific details, use:
 
-# Knowledge Layer
-
-* Amazon Bedrock Knowledge Base
-* Vector store: Amazon S3 Vectors
-* Advanced parsing enabled to extract:
-
-  * Text chunks
-  * Tables
-  * Figures
-  * Charts
-  * Embedded images
-
----
-
-# Metadata Schema (Generic & Cross-Doc Ready)
-
-Each indexed item must include:
-
-| Field          | Description                                             |
-| -------------- | ------------------------------------------------------- |
-| `doc_id`       | Unique document identifier                              |
-| `doc_type`     | Document category                                       |
-| `asset_type`   | text_chunk, caption, figure_image, table_image, diagram |
-| `asset_id`     | Unique asset identifier                                 |
-| `asset_s3_key` | S3 path (visuals only)                                  |
-| `page`         | Optional page number                                    |
-| `section`      | Optional heading                                        |
-| `chunk_id`     | KB chunk identifier                                     |
-
-Constraints:
-
-* ≤1KB metadata
-* ≤35 metadata keys
-
----
-
-# Query Processing Pipeline
-
-## Step 1 — Retrieval (Multi-Document Default)
-
-* Perform broad semantic retrieval across all documents.
-* Perform optional targeted retrieval if modality cues detected.
-* Do not restrict by `doc_id` unless user explicitly scopes the query.
-
----
-
-## Step 2 — Evidence Bundle Construction
-
-Construct a **cross-document evidence bundle**:
-
-### Text Snippets
-
-* 2–8 high-relevance chunks.
-* Allow multiple `doc_id`s.
-* Cap per-document contributions to prevent dominance.
-
-### Visual Assets
-
-* 0–3 figures/tables/diagrams.
-* Include captions where available.
-* May originate from different documents.
-
-### Deduplication
-
-* Deduplicate by `(doc_id, asset_id)` or `(doc_id, chunk_id)`.
-* Maintain diversity across documents when the query implies comparison or aggregation.
-
----
-
-## Step 3 — Reranking
-
-Score candidate bundles using:
-
-* Reciprocal Rank Fusion
-* Modality alignment
-* Explicit references
-* Evidence density
-* Cross-document agreement boost (if multiple documents support same claim)
-
-Select top bundle.
-
----
-
-# Answer Generation (Claude Vision)
-
-Claude must:
-
-* Use only provided evidence.
-* Cite each meaningful claim.
-* Indicate document identifiers in citations.
-* State when evidence is insufficient.
-
----
-
-# Required Output Format
-
-```json
-{
-  "answer": "...",
-  "citations": [
-    {
-      "statement": "...",
-      "evidence_ids": ["E2","E5"]
-    }
-  ],
-  "used_evidence_ids": ["E1","E2","E5"],
-  "limitations": ["..."]
-}
-```
-
-Each evidence ID must map to:
-
-* `doc_id`
-* `asset_type`
-* `asset_id` or `chunk_id`
-* Optional `page`
-
----
-
-# Evaluation Strategy
-
-Test across:
-
-* Text-only questions
-* Visual interpretation
-* Table reasoning
-* Cross-document comparison
-* Contradiction detection
-* Citation correctness
-
-Metrics:
-
-* Evidence Recall@K
-* Citation precision
-* Cross-document synthesis accuracy
-* Hallucination rate
-
----
-
-# Non-Goals (MVP)
-
-* Full document knowledge graph
-* Advanced contradiction detection
-* Automated table normalization
-* Fine-tuned rerank model
-
----
-
-# Long-Term Evolution
-
-* Cross-document reasoning improvements
-* Structured table extraction
-* Confidence scoring
-* Enterprise audit logs
-* Domain adapters
+- Canonical architecture: `docs/context/ARCHITECTURE.md`
+- Hard invariants (laws): `docs/context/SYSTEM_INVARIANTS.md`
+- Canonical payload shapes: `schemas/*.schema.json`
+- Contracts index + validation sequence: `docs/reference/CONTRACTS.md`
+- Invariant-to-test mapping: `docs/reference/TEST_STRATEGY.md`
+- Delivery sequencing guidance: `docs/plans/ROADMAP.md`
