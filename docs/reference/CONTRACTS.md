@@ -11,7 +11,7 @@ Canonical shapes live only in `schemas/`.
 - Canonical schema definitions: `schemas/*.schema.json`
 - Runtime validation logic: `validation/validators.py`
 - Contract fixture checks: `tests/test_contract_fixtures.py`
-- Provenance join logic: `provenance/manifest_store.py`, `provenance/retrieval_normalizer.py`
+- Provenance join logic: `provenance/manifest_store.py` (DynamoDB-backed), `provenance/retrieval_normalizer.py`
 
 ## Schema Index
 

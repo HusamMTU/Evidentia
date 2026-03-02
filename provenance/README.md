@@ -8,9 +8,14 @@ Bedrock-managed extracted asset keys may not include `doc_id`, so `doc_id` must 
 
 ## Components
 
-- `manifest_store.py`: SQLite-backed manifest persistence
+- `manifest_store.py`: DynamoDB-backed manifest persistence
 - `retrieval_normalizer.py`: candidate normalization with manifest-backed `doc_id` resolution
 - `errors.py`: provenance resolution errors
+
+## DynamoDB Contract
+
+- Table PK: `doc_id` (String)
+- GSI: `source_uri-index` on `source_uri` (String)
 
 ## CLI Utility
 
@@ -19,6 +24,7 @@ Use `scripts/register_ingestion_manifest.py` to upsert mappings:
 ```bash
 python3 scripts/register_ingestion_manifest.py \
   --doc-id smoke-20260302T120000Z \
-  --source-uri s3://my-raw-bucket/documents-raw/smoke-20260302T120000Z/source.pdf
+  --source-uri s3://my-raw-bucket/documents-raw/smoke-20260302T120000Z/source.pdf \
+  --table-name EvidentiaFoundation-dev-ingestion-manifest \
+  --region us-east-1
 ```
-

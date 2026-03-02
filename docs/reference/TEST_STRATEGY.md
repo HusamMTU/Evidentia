@@ -15,6 +15,8 @@ If this document conflicts with implementation reality, follow:
 
 ## Current Implemented Contract Tests
 
+These are the tests that currently exist in-repo:
+
 - `tests/test_contract_fixtures.py`
 - `tests/test_ingestion_manifest_store.py`
 - `tests/test_retrieval_provenance_normalizer.py`
@@ -27,7 +29,9 @@ If this document conflicts with implementation reality, follow:
 
 ## Invariant Coverage Matrix
 
-Every invariant must map to at least one automated test. Matrix below is the canonical mapping plan.
+Every invariant must map to at least one automated test.
+
+Matrix below is the target unit/integration/e2e mapping plan. Many entries are planned coverage targets and are not yet implemented as files in this repo.
 
 | Invariant ID | Unit Coverage | Integration Coverage | E2E Coverage |
 | --- | --- | --- | --- |

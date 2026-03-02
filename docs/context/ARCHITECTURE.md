@@ -13,7 +13,7 @@ This document is the canonical architecture reference. It explains how the syste
 
 - Ingestion surface (document registration/upload)
 - Raw document storage (S3 raw prefix)
-- Ingestion manifest/provenance store (`doc_id` <-> source URI mapping)
+- Ingestion manifest/provenance store (DynamoDB; `doc_id` <-> source URI mapping)
 - Knowledge base ingestion/parsing (Bedrock KB + advanced parsing)
 - Vector retrieval backend (S3 Vectors)
 - Retrieval adapter
@@ -28,11 +28,12 @@ This document is the canonical architecture reference. It explains how the syste
 ### Ingestion Path
 
 1. Documents are stored in raw storage.
-2. Knowledge base ingestion parses and chunks content.
-3. Visual artifacts are extracted to asset storage.
-4. Text and visual representations are embedded and indexed.
-5. Ingestion manifest persists stable `doc_id` to source URI mapping.
-6. Metadata is preserved for downstream provenance.
+2. Ingestion manifest persists the stable `doc_id` to source URI mapping at registration/upload time.
+3. Knowledge base ingestion parses and chunks content.
+4. Visual artifacts are extracted to asset storage.
+5. Text and visual representations are embedded and indexed.
+6. Ingestion manifest status is updated across ingestion lifecycle states (for example `uploaded` -> `ingestion_started` -> `ingested`).
+7. Metadata is preserved for downstream provenance.
 
 Why:
 

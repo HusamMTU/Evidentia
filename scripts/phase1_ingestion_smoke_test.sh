@@ -19,7 +19,12 @@ Options:
   --kb-name <name>       Knowledge base name for ID discovery fallback
   --data-source-name <name>
                           Data source name for ID discovery fallback
-  --manifest-db <path>   Local SQLite ingestion manifest path (default: .evidentia/ingestion_manifest.db)
+  --manifest-table-name <name>
+                          DynamoDB ingestion manifest table name
+                          (default: EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME or stack output)
+  --manifest-source-uri-index-name <name>
+                          DynamoDB GSI name for source URI lookups
+                          (default: EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX or source_uri-index)
   --skip-manifest-write  Skip manifest upsert step after raw upload
   --poll-seconds <n>     Poll interval in seconds (default: 15)
   --timeout-seconds <n>  Max wait time in seconds (default: 1800)
@@ -51,7 +56,8 @@ kb_name="${BEDROCK_KNOWLEDGE_BASE_NAME:-}"
 data_source_name="${BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME:-}"
 poll_seconds=15
 timeout_seconds=1800
-manifest_db="${EVIDENTIA_INGESTION_MANIFEST_DB:-.evidentia/ingestion_manifest.db}"
+manifest_table_name="${EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME:-}"
+manifest_source_uri_index_name="${EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX:-}"
 skip_manifest_write=false
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 manifest_register_script="${script_dir}/register_ingestion_manifest.py"
@@ -102,8 +108,12 @@ while [[ $# -gt 0 ]]; do
       data_source_name="${2:-}"
       shift 2
       ;;
-    --manifest-db)
-      manifest_db="${2:-}"
+    --manifest-table-name)
+      manifest_table_name="${2:-}"
+      shift 2
+      ;;
+    --manifest-source-uri-index-name)
+      manifest_source_uri_index_name="${2:-}"
       shift 2
       ;;
     --skip-manifest-write)
@@ -235,6 +245,8 @@ raw_bucket_from_stack="$(get_stack_output "RawBucketName" || true)"
 assets_bucket_from_stack="$(get_stack_output "AssetsBucketName" || true)"
 kb_id_from_stack="$(get_stack_output "BedrockKnowledgeBaseId" || true)"
 data_source_id_from_stack="$(get_stack_output "BedrockKnowledgeBaseDataSourceId" || true)"
+manifest_table_name_from_stack="$(get_stack_output "IngestionManifestTableName" || true)"
+manifest_source_uri_index_name_from_stack="$(get_stack_output "IngestionManifestSourceUriIndexName" || true)"
 if [[ -z "$raw_bucket" ]]; then
   raw_bucket="$raw_bucket_from_stack"
 fi
@@ -246,6 +258,15 @@ if [[ -z "$kb_id" ]]; then
 fi
 if [[ -z "$data_source_id" ]]; then
   data_source_id="$data_source_id_from_stack"
+fi
+if [[ -z "$manifest_table_name" ]]; then
+  manifest_table_name="$manifest_table_name_from_stack"
+fi
+if [[ -z "$manifest_source_uri_index_name" ]]; then
+  manifest_source_uri_index_name="$manifest_source_uri_index_name_from_stack"
+fi
+if [[ -z "$manifest_source_uri_index_name" ]]; then
+  manifest_source_uri_index_name="source_uri-index"
 fi
 
 if [[ -z "$kb_id" && -n "$kb_name" ]]; then
@@ -327,6 +348,11 @@ if ! data_source_exists "$kb_id" "$data_source_id"; then
   exit 1
 fi
 
+if [[ "$skip_manifest_write" != true ]] && [[ -z "$manifest_table_name" ]]; then
+  echo "Unable to resolve ingestion manifest table name. Set EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME, pass --manifest-table-name, or provide stack output IngestionManifestTableName." >&2
+  exit 1
+fi
+
 raw_key="documents-raw/${doc_id}/source.pdf"
 legacy_assets_prefix="documents-assets/${doc_id}/"
 bedrock_assets_prefix="aws/bedrock/knowledge_bases/${kb_id}/${data_source_id}/"
@@ -340,7 +366,10 @@ echo "Raw bucket: $raw_bucket"
 echo "Assets bucket: $assets_bucket"
 echo "Knowledge base ID: $kb_id"
 echo "Data source ID: $data_source_id"
-echo "Manifest DB: $manifest_db"
+if [[ -n "$manifest_table_name" ]]; then
+  echo "Manifest table: $manifest_table_name"
+fi
+echo "Manifest source-uri index: $manifest_source_uri_index_name"
 echo "Manifest write: $([[ "$skip_manifest_write" == true ]] && echo "disabled" || echo "enabled")"
 if [[ -n "$kb_name" ]]; then
   echo "Knowledge base name hint: $kb_name"
@@ -369,15 +398,17 @@ fi
 
 if [[ "$skip_manifest_write" != true ]]; then
   if ! command -v python3 >/dev/null 2>&1; then
-    echo "Warning: python3 not found; skipping ingestion manifest upsert."
+    echo "Warning: python3 not found; skipping ingestion manifest upsert." >&2
   elif [[ ! -f "$manifest_register_script" ]]; then
-    echo "Warning: manifest register script not found at '$manifest_register_script'; skipping upsert."
+    echo "Warning: manifest register script not found at '$manifest_register_script'; skipping upsert." >&2
   else
     echo "1a) Upserting ingestion manifest mapping"
     manifest_cmd=(python3 "$manifest_register_script" \
       --doc-id "$doc_id" \
       --source-uri "$source_uri" \
-      --db-path "$manifest_db" \
+      --table-name "$manifest_table_name" \
+      --source-uri-index-name "$manifest_source_uri_index_name" \
+      --region "$region" \
       --status uploaded \
       --kb-id "$kb_id" \
       --data-source-id "$data_source_id")
@@ -387,7 +418,11 @@ if [[ "$skip_manifest_write" != true ]]; then
     if [[ -n "$source_version_id" ]]; then
       manifest_cmd+=(--source-version-id "$source_version_id")
     fi
-    "${manifest_cmd[@]}"
+    if [[ -n "$profile" ]]; then
+      AWS_PROFILE="$profile" "${manifest_cmd[@]}"
+    else
+      "${manifest_cmd[@]}"
+    fi
   fi
 fi
 
@@ -405,6 +440,31 @@ if [[ -z "$ingestion_job_id" || "$ingestion_job_id" == "None" ]]; then
   exit 1
 fi
 echo "Ingestion job ID: $ingestion_job_id"
+
+if [[ "$skip_manifest_write" != true ]] && [[ -f "$manifest_register_script" ]]; then
+  echo "2a) Updating ingestion manifest status with ingestion job ID"
+  manifest_update_cmd=(python3 "$manifest_register_script" \
+    --doc-id "$doc_id" \
+    --source-uri "$source_uri" \
+    --table-name "$manifest_table_name" \
+    --source-uri-index-name "$manifest_source_uri_index_name" \
+    --region "$region" \
+    --status ingestion_started \
+    --kb-id "$kb_id" \
+    --data-source-id "$data_source_id" \
+    --ingestion-job-id "$ingestion_job_id")
+  if [[ -n "$source_etag" ]]; then
+    manifest_update_cmd+=(--source-etag "$source_etag")
+  fi
+  if [[ -n "$source_version_id" ]]; then
+    manifest_update_cmd+=(--source-version-id "$source_version_id")
+  fi
+  if [[ -n "$profile" ]]; then
+    AWS_PROFILE="$profile" "${manifest_update_cmd[@]}"
+  else
+    "${manifest_update_cmd[@]}"
+  fi
+fi
 
 echo "3) Polling ingestion job status"
 started_epoch="$(date +%s)"
@@ -531,6 +591,31 @@ else
 fi
 
 assets_key_count=$((legacy_assets_key_count + bedrock_assets_key_count))
+
+if [[ "$skip_manifest_write" != true ]] && [[ -f "$manifest_register_script" ]]; then
+  echo "4a) Marking ingestion manifest status as ingested"
+  manifest_complete_cmd=(python3 "$manifest_register_script" \
+    --doc-id "$doc_id" \
+    --source-uri "$source_uri" \
+    --table-name "$manifest_table_name" \
+    --source-uri-index-name "$manifest_source_uri_index_name" \
+    --region "$region" \
+    --status ingested \
+    --kb-id "$kb_id" \
+    --data-source-id "$data_source_id" \
+    --ingestion-job-id "$ingestion_job_id")
+  if [[ -n "$source_etag" ]]; then
+    manifest_complete_cmd+=(--source-etag "$source_etag")
+  fi
+  if [[ -n "$source_version_id" ]]; then
+    manifest_complete_cmd+=(--source-version-id "$source_version_id")
+  fi
+  if [[ -n "$profile" ]]; then
+    AWS_PROFILE="$profile" "${manifest_complete_cmd[@]}"
+  else
+    "${manifest_complete_cmd[@]}"
+  fi
+fi
 
 echo
 echo "Smoke test PASS"

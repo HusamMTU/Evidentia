@@ -13,7 +13,7 @@ If this roadmap conflicts with implementation reality, follow:
 - Contracts index and validation flow in `docs/reference/CONTRACTS.md`
 - Executable checks in `tests/` and `docs/reference/TEST_STRATEGY.md`
 
-## Current Implementation Status (as of 2026-02-27)
+## Current Implementation Status (as of 2026-03-02)
 
 - Phase 0 (Contracts and Invariants): **Completed in repo**
   - Schemas: `schemas/query-request.schema.json`, `schemas/model-answer.schema.json`, `schemas/evidence-item.schema.json`, `schemas/query-response.schema.json`
@@ -21,11 +21,19 @@ If this roadmap conflicts with implementation reality, follow:
   - Contract fixtures and tests: `tests/fixtures/`, `tests/test_contract_fixtures.py`
 - Phase 1 (Cloud Foundation and Security): **In progress, foundation deployed**
   - CDK app and stack: `infra/cdk/app.py`, `infra/cdk/evidentia_cdk/foundation_stack.py`
+  - DynamoDB ingestion manifest table + stack outputs wired in CDK and env sync scripts
   - Infra docs and runbook: `infra/cdk/README.md`
+  - Ingestion/provenance operational scripts:
+    - `scripts/phase1_ingestion_smoke_test.sh`
+    - `scripts/register_ingestion_manifest.py`
+    - `scripts/sync_env_from_stack.sh`
   - Operational cleanup scripts for repeated deployment attempts:
     - `scripts/cleanup_redundant_s3_buckets.sh` (classic S3)
     - `scripts/cleanup_redundant_s3vectors.sh` (S3 Vectors)
-- Phases 2-7: **Not implemented yet**
+- Phase 2 (Ingestion Pipeline MVP): **Partially implemented**
+  - Manifest persistence/join layer: `provenance/manifest_store.py`, `provenance/retrieval_normalizer.py`
+  - Unit tests: `tests/test_ingestion_manifest_store.py`, `tests/test_retrieval_provenance_normalizer.py`
+- Phases 3-7: **Not implemented yet**
 
 ## Planning Principles
 

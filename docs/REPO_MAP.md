@@ -28,7 +28,7 @@ One-page map of where core concepts live.
 
 ## Provenance and Manifest
 
-- `provenance/manifest_store.py`: SQLite-backed ingestion manifest (`doc_id <-> source URI`) persistence
+- `provenance/manifest_store.py`: DynamoDB-backed ingestion manifest (`doc_id <-> source URI`) persistence
 - `provenance/retrieval_normalizer.py`: retrieval candidate doc_id normalization from provenance metadata + manifest lookup
 - `provenance/errors.py`: provenance-specific errors
 - `scripts/register_ingestion_manifest.py`: CLI to upsert manifest entries
@@ -44,7 +44,7 @@ One-page map of where core concepts live.
 ## Infrastructure
 
 - `infra/cdk/app.py`: CDK app entrypoint and context/env wiring
-- `infra/cdk/evidentia_cdk/foundation_stack.py`: foundation resources (S3, S3 Vectors, IAM, optional Bedrock KB)
+- `infra/cdk/evidentia_cdk/foundation_stack.py`: foundation resources (S3, S3 Vectors, DynamoDB manifest table, IAM, optional Bedrock KB)
 - `infra/cdk/README.md`: infra deployment/operations runbook
 
 ## Operational Scripts

@@ -28,5 +28,5 @@ infra/cdk/cdk.out/
 # Env files
 .env
 
-# Local manifest store
+# Local runtime artifacts
 .evidentia/

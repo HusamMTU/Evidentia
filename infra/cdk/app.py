@@ -46,6 +46,11 @@ region = _context_or_env(app, "region", "CDK_DEFAULT_REGION")
 raw_bucket_name = _context_or_env(app, "rawBucketName", "INFRA_RAW_BUCKET_NAME")
 assets_bucket_name = _context_or_env(app, "assetsBucketName", "INFRA_ASSETS_BUCKET_NAME")
 vectors_bucket_name = _context_or_env(app, "vectorsBucketName", "INFRA_VECTORS_BUCKET_NAME")
+ingestion_manifest_table_name = _context_or_env(
+    app,
+    "ingestionManifestTableName",
+    "INFRA_INGESTION_MANIFEST_TABLE_NAME",
+)
 api_runtime_principal = _context_or_env(
     app,
     "apiRuntimePrincipal",
@@ -111,6 +116,7 @@ EvidentiaFoundationStack(
     raw_bucket_name=raw_bucket_name,
     assets_bucket_name=assets_bucket_name,
     vectors_bucket_name=vectors_bucket_name,
+    ingestion_manifest_table_name=ingestion_manifest_table_name,
     api_runtime_principal=api_runtime_principal,
     enable_bedrock_kb=enable_bedrock_kb,
     knowledge_base_name=knowledge_base_name,

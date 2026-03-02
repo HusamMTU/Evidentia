@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-import sqlite3
+from typing import Any, Protocol
 
 
 def _utc_now_iso() -> str:
@@ -30,6 +29,20 @@ def make_s3_uri(bucket: str, key: str) -> str:
     if not bucket_clean or not key_clean:
         raise ValueError("bucket and key must be non-empty")
     return f"s3://{bucket_clean}/{key_clean}"
+
+
+SOURCE_URI_INDEX_NAME = "source_uri-index"
+
+
+class DynamoTableClient(Protocol):
+    def put_item(self, *, Item: dict[str, Any]) -> Any:
+        ...
+
+    def get_item(self, *, Key: dict[str, Any]) -> dict[str, Any]:
+        ...
+
+    def query(self, **kwargs: Any) -> dict[str, Any]:
+        ...
 
 
 @dataclass(frozen=True)
@@ -74,123 +87,126 @@ class IngestionManifestRecord:
             source_version_id=source_version_id,
         )
 
+    def to_item(self) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "doc_id": self.doc_id,
+            "source_uri": self.source_uri,
+            "source_bucket": self.source_bucket,
+            "source_key": self.source_key,
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+        optional_fields = {
+            "kb_id": self.kb_id,
+            "data_source_id": self.data_source_id,
+            "ingestion_job_id": self.ingestion_job_id,
+            "source_etag": self.source_etag,
+            "source_version_id": self.source_version_id,
+        }
+        for key, value in optional_fields.items():
+            if value is not None:
+                item[key] = value
+        return item
 
-class SQLiteIngestionManifestStore:
-    """Durable doc_id <-> source URI mapping used for provenance joins."""
+    @classmethod
+    def from_item(cls, item: dict[str, Any]) -> "IngestionManifestRecord":
+        return cls(
+            doc_id=item["doc_id"],
+            source_uri=item["source_uri"],
+            source_bucket=item["source_bucket"],
+            source_key=item["source_key"],
+            status=item["status"],
+            kb_id=item.get("kb_id"),
+            data_source_id=item.get("data_source_id"),
+            ingestion_job_id=item.get("ingestion_job_id"),
+            source_etag=item.get("source_etag"),
+            source_version_id=item.get("source_version_id"),
+            created_at=item.get("created_at"),
+            updated_at=item.get("updated_at"),
+        )
 
-    def __init__(self, db_path: str | Path) -> None:
-        self._db_path = Path(db_path)
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+class DynamoIngestionManifestStore:
+    """Durable doc_id <-> source URI mapping backed by DynamoDB."""
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def __init__(
+        self,
+        table_name: str,
+        *,
+        region_name: str | None = None,
+        source_uri_index_name: str = SOURCE_URI_INDEX_NAME,
+        table: DynamoTableClient | None = None,
+    ) -> None:
+        if not table_name.strip():
+            raise ValueError("table_name must be non-empty")
+        self._table_name = table_name
+        self._source_uri_index_name = source_uri_index_name
+        self._table = table or self._build_table_resource(table_name=table_name, region_name=region_name)
 
-    def _initialize(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS ingestion_manifest (
-                    doc_id TEXT PRIMARY KEY,
-                    source_uri TEXT NOT NULL UNIQUE,
-                    source_bucket TEXT NOT NULL,
-                    source_key TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    kb_id TEXT,
-                    data_source_id TEXT,
-                    ingestion_job_id TEXT,
-                    source_etag TEXT,
-                    source_version_id TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_ingestion_manifest_source_uri ON ingestion_manifest(source_uri)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ingestion_manifest_doc_id ON ingestion_manifest(doc_id)"
-            )
+    @staticmethod
+    def _build_table_resource(*, table_name: str, region_name: str | None) -> DynamoTableClient:
+        try:
+            import boto3
+        except ImportError as exc:  # pragma: no cover - environment dependent
+            raise RuntimeError(
+                "boto3 is required for DynamoDB-backed ingestion manifest store. "
+                "Install it with: pip install boto3"
+            ) from exc
+
+        dynamodb = boto3.resource("dynamodb", region_name=region_name) if region_name else boto3.resource(
+            "dynamodb"
+        )
+        return dynamodb.Table(table_name)
 
     def upsert(self, record: IngestionManifestRecord) -> IngestionManifestRecord:
         if not record.doc_id.strip():
             raise ValueError("doc_id must be non-empty")
 
-        now = _utc_now_iso()
-        with self._connect() as conn:
-            existing = conn.execute(
-                "SELECT created_at FROM ingestion_manifest WHERE doc_id = ?",
-                (record.doc_id,),
-            ).fetchone()
-            created_at = existing["created_at"] if existing is not None else now
-
-            conn.execute(
-                """
-                INSERT INTO ingestion_manifest (
-                    doc_id,
-                    source_uri,
-                    source_bucket,
-                    source_key,
-                    status,
-                    kb_id,
-                    data_source_id,
-                    ingestion_job_id,
-                    source_etag,
-                    source_version_id,
-                    created_at,
-                    updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(doc_id) DO UPDATE SET
-                    source_uri=excluded.source_uri,
-                    source_bucket=excluded.source_bucket,
-                    source_key=excluded.source_key,
-                    status=excluded.status,
-                    kb_id=excluded.kb_id,
-                    data_source_id=excluded.data_source_id,
-                    ingestion_job_id=excluded.ingestion_job_id,
-                    source_etag=excluded.source_etag,
-                    source_version_id=excluded.source_version_id,
-                    updated_at=excluded.updated_at
-                """,
-                (
-                    record.doc_id,
-                    record.source_uri,
-                    record.source_bucket,
-                    record.source_key,
-                    record.status,
-                    record.kb_id,
-                    record.data_source_id,
-                    record.ingestion_job_id,
-                    record.source_etag,
-                    record.source_version_id,
-                    created_at,
-                    now,
-                ),
+        source_owner = self.get_by_source_uri(record.source_uri)
+        if source_owner and source_owner.doc_id != record.doc_id:
+            raise ValueError(
+                f"source_uri {record.source_uri!r} is already mapped to doc_id "
+                f"{source_owner.doc_id!r}"
             )
-        return self.get_by_doc_id(record.doc_id)  # type: ignore[return-value]
+
+        now = _utc_now_iso()
+        existing = self.get_by_doc_id(record.doc_id)
+        created_at = existing.created_at if existing and existing.created_at else now
+        persisted = IngestionManifestRecord(
+            doc_id=record.doc_id,
+            source_uri=record.source_uri,
+            source_bucket=record.source_bucket,
+            source_key=record.source_key,
+            status=record.status,
+            kb_id=record.kb_id,
+            data_source_id=record.data_source_id,
+            ingestion_job_id=record.ingestion_job_id,
+            source_etag=record.source_etag,
+            source_version_id=record.source_version_id,
+            created_at=created_at,
+            updated_at=now,
+        )
+        self._table.put_item(Item=persisted.to_item())
+        return persisted
 
     def get_by_doc_id(self, doc_id: str) -> IngestionManifestRecord | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM ingestion_manifest WHERE doc_id = ?",
-                (doc_id,),
-            ).fetchone()
-        if row is None:
+        response = self._table.get_item(Key={"doc_id": doc_id})
+        item = response.get("Item")
+        if item is None:
             return None
-        return self._row_to_record(row)
+        return IngestionManifestRecord.from_item(item)
 
     def get_by_source_uri(self, source_uri: str) -> IngestionManifestRecord | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM ingestion_manifest WHERE source_uri = ?",
-                (source_uri,),
-            ).fetchone()
-        if row is None:
+        response = self._table.query(
+            IndexName=self._source_uri_index_name,
+            KeyConditionExpression="source_uri = :source_uri",
+            ExpressionAttributeValues={":source_uri": source_uri},
+            Limit=1,
+        )
+        items = response.get("Items", [])
+        if not items:
             return None
-        return self._row_to_record(row)
+        return IngestionManifestRecord.from_item(items[0])
 
     def resolve_doc_id(
         self,
@@ -206,21 +222,3 @@ class SQLiteIngestionManifestStore:
         if source_bucket and source_key:
             return self.resolve_doc_id(source_uri=make_s3_uri(source_bucket, source_key))
         return None
-
-    @staticmethod
-    def _row_to_record(row: sqlite3.Row) -> IngestionManifestRecord:
-        return IngestionManifestRecord(
-            doc_id=row["doc_id"],
-            source_uri=row["source_uri"],
-            source_bucket=row["source_bucket"],
-            source_key=row["source_key"],
-            status=row["status"],
-            kb_id=row["kb_id"],
-            data_source_id=row["data_source_id"],
-            ingestion_job_id=row["ingestion_job_id"],
-            source_etag=row["source_etag"],
-            source_version_id=row["source_version_id"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
-
