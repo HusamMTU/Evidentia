@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>S3 Vectors Inspector</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>S3 Vectors Inspector</h1>
+        <p class="subtitle">Read-only index browser inspired by Attu-style workflows.</p>
+      </div>
+      <div class="status" id="status">Ready</div>
+    </header>
+
+    <section class="controls">
+      <label>
+        Region
+        <input id="region" type="text" placeholder="us-east-1" />
+      </label>
+      <label>
+        Vector Bucket
+        <input id="vector_bucket_name" type="text" placeholder="bucket name" />
+      </label>
+      <label>
+        Index Name
+        <input id="index_name" type="text" placeholder="index name" />
+      </label>
+      <label>
+        Max Items
+        <input id="max_results" type="number" min="1" max="200" value="50" />
+      </label>
+      <div class="actions">
+        <button id="load_vectors">Load Vectors</button>
+        <button id="load_more" class="secondary">Load More</button>
+        <button id="refresh_summary" class="secondary">Refresh Summary</button>
+      </div>
+    </section>
+
+    <section class="cards">
+      <article class="card">
+        <h3>Loaded Rows</h3>
+        <div class="metric" id="metric_rows">0</div>
+      </article>
+      <article class="card">
+        <h3>Data Sources</h3>
+        <div class="metric" id="metric_ds">0</div>
+      </article>
+      <article class="card">
+        <h3>Modalities</h3>
+        <div class="metric" id="metric_modalities">0</div>
+      </article>
+    </section>
+
+    <main class="layout">
+      <section class="panel list-panel">
+        <div class="panel-head">
+          <h2>Vectors</h2>
+          <input id="search" type="search" placeholder="Filter by key, source URI, or data source ID" />
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>DS ID</th>
+                <th>Modality</th>
+                <th>Page</th>
+                <th>Related Assets</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody id="vectors_body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel details-panel">
+        <div class="panel-head split">
+          <h2>Inspector</h2>
+          <button id="find_similar" class="secondary">Find Similar</button>
+        </div>
+        <div class="small-form">
+          <label>
+            Top K
+            <input id="top_k" type="number" min="1" max="100" value="10" />
+          </label>
+        </div>
+        <h3>Selected Summary</h3>
+        <pre id="selected_summary" class="json"></pre>
+        <h3>Vector Payload</h3>
+        <pre id="selected_payload" class="json"></pre>
+        <h3>Similarity Results</h3>
+        <pre id="similar_results" class="json"></pre>
+      </section>
+    </main>
+
+    <section class="panel summary-panel">
+      <h2>Data Source Summary (Sample)</h2>
+      <div class="summary-grid">
+        <div>
+          <h3>Data Source IDs</h3>
+          <pre id="data_source_summary" class="json"></pre>
+        </div>
+        <div>
+          <h3>Modalities</h3>
+          <pre id="modality_summary" class="json"></pre>
+        </div>
+      </div>
+    </section>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
