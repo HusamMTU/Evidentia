@@ -185,6 +185,9 @@ Resolution order in the script:
 - optional name-based KB/data source resolution via:
   - `BEDROCK_KNOWLEDGE_BASE_NAME` / `--kb-name`
   - `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` / `--data-source-name`
+- preflight guard:
+  - script aborts when the resolved KB has multiple active data sources
+  - bypass only when intentionally testing with `--allow-multiple-data-sources`
 - ingestion manifest persistence (default enabled):
   - upserts `doc_id <-> source_uri` into DynamoDB table (`EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME`)
   - status upsert sequence: `uploaded` -> `ingestion_started` -> `ingested`
@@ -260,6 +263,7 @@ aws --region us-east-1 dynamodb delete-table --table-name "$TABLE_NAME"
 | `advanced_parsing_strategy=BEDROCK_FOUNDATION_MODEL requires advanced_parsing_model_arn` | Missing model ARN for FM parsing | Set `BEDROCK_ADVANCED_PARSING_MODEL_ARN` or `-c advancedParsingModelArn=...`. |
 | `ModuleNotFoundError: No module named 'boto3'` during smoke test manifest step | `python3` environment does not include runtime dependencies | Install root deps (`pip install -e .` or `uv sync`) and rerun smoke test. |
 | Smoke test cannot resolve KB/data source IDs | `.env` stale, KB disabled, or wrong stack | Re-sync `.env` from outputs, verify `enableBedrockKb=true`, check stack/region. |
+| Smoke test fails with "multiple active data sources" | Duplicate data sources exist for the same KB (often from prior dev iterations) | Remove/disable extra data sources and re-sync `.env`; use `--allow-multiple-data-sources` only for deliberate temporary tests. |
 | Smoke test cannot resolve ingestion manifest table | `.env` missing table output or stack not updated | Re-run `sync_env_from_stack.sh`, or pass `--manifest-table-name`, or deploy updated stack. |
 | Smoke test resolves deleted bucket IDs | `.env` points to old resources after redeploy | Re-run `sync_env_from_stack.sh` and retry. |
 | `cdk destroy` completes but buckets/vector buckets/table still exist | Resources are retained intentionally | Run cleanup scripts/commands above if you need full teardown. |

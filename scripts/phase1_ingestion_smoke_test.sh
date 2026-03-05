@@ -19,6 +19,8 @@ Options:
   --kb-name <name>       Knowledge base name for ID discovery fallback
   --data-source-name <name>
                           Data source name for ID discovery fallback
+  --allow-multiple-data-sources
+                          Allow ingestion to continue even when KB has multiple active data sources
   --manifest-table-name <name>
                           DynamoDB ingestion manifest table name
                           (default: EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME or stack output)
@@ -59,6 +61,7 @@ timeout_seconds=1800
 manifest_table_name="${EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME:-}"
 manifest_source_uri_index_name="${EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX:-}"
 skip_manifest_write=false
+allow_multiple_data_sources=false
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 manifest_register_script="${script_dir}/register_ingestion_manifest.py"
 
@@ -118,6 +121,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-manifest-write)
       skip_manifest_write=true
+      shift
+      ;;
+    --allow-multiple-data-sources)
+      allow_multiple_data_sources=true
       shift
       ;;
     --poll-seconds)
@@ -207,6 +214,22 @@ resolve_data_source_id_from_name() {
     return 1
   fi
   printf "%s" "$id"
+}
+
+list_active_data_source_ids() {
+  local kb_identifier="$1"
+  aws "${aws_args[@]}" bedrock-agent list-data-sources \
+    --knowledge-base-id "$kb_identifier" \
+    --query "dataSourceSummaries[?status=='AVAILABLE' || status=='ACTIVE'].dataSourceId" \
+    --output text 2>/dev/null || true
+}
+
+list_active_data_source_rows() {
+  local kb_identifier="$1"
+  aws "${aws_args[@]}" bedrock-agent list-data-sources \
+    --knowledge-base-id "$kb_identifier" \
+    --query "dataSourceSummaries[?status=='AVAILABLE' || status=='ACTIVE'].[dataSourceId,name,status]" \
+    --output text 2>/dev/null || true
 }
 
 none_to_zero() {
@@ -343,6 +366,27 @@ if ! knowledge_base_exists "$kb_id"; then
   echo "Resolved knowledge base '$kb_id' does not exist. Update .env, pass --kb-id, or verify stack outputs." >&2
   exit 1
 fi
+
+active_data_source_ids_raw="$(list_active_data_source_ids "$kb_id")"
+active_data_source_ids=()
+if [[ -n "$active_data_source_ids_raw" && "$active_data_source_ids_raw" != "None" ]]; then
+  read -r -a active_data_source_ids <<< "$active_data_source_ids_raw"
+fi
+
+if [[ "${#active_data_source_ids[@]}" -gt 1 && "$allow_multiple_data_sources" != true ]]; then
+  echo "Knowledge base '$kb_id' has multiple active data sources; refusing to continue." >&2
+  echo "Use exactly one active data source per dev KB, or pass --allow-multiple-data-sources to bypass." >&2
+  echo "Active data sources (id name status):" >&2
+  active_rows="$(list_active_data_source_rows "$kb_id")"
+  if [[ -n "$active_rows" && "$active_rows" != "None" ]]; then
+    while IFS= read -r row; do
+      [[ -z "$row" ]] && continue
+      echo "  - $row" >&2
+    done <<< "$active_rows"
+  fi
+  exit 1
+fi
+
 if ! data_source_exists "$kb_id" "$data_source_id"; then
   echo "Resolved data source '$data_source_id' does not exist for knowledge base '$kb_id'. Update .env, pass --data-source-id, or verify stack outputs." >&2
   exit 1
