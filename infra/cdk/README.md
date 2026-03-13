@@ -46,9 +46,23 @@ When `enableBedrockKb=true`, `embeddingModelArn` / `BEDROCK_EMBEDDING_MODEL_ARN`
 - `.env` at repo root for environment values
 - For smoke-test manifest writes, Python `boto3` must be available to `python3` (for example via `pip install -e .` or `uv sync` from repo root)
 
-## Build and Deploy (Examples)
+## Deploy Runbook (Step-by-Step)
 
-Run from `infra/cdk`:
+This sequence is the easiest reproducible path for a fresh or repeat deploy.
+
+Step 1: Prepare `.env` at repo root
+
+```bash
+cd /path/to/repo
+cp .env.example .env   # first time only
+```
+
+Set/verify deploy-time values in `.env` before deploy:
+
+- `AWS_REGION`
+- `BEDROCK_EMBEDDING_MODEL_ARN` (required only when deploying with `enableBedrockKb=true`)
+
+Step 2: Prepare CDK environment (run from `infra/cdk`)
 
 ```bash
 cd infra/cdk
@@ -56,13 +70,20 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 set -a; source ../../.env; set +a
+```
 
-export AWS_REGION=us-east-1
+Step 3: Export deployment target and bootstrap
+
+```bash
+export AWS_REGION="${AWS_REGION:-us-east-1}"
 export CDK_DEFAULT_ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 export CDK_DEFAULT_REGION="$AWS_REGION"
 
+# first time per account/region
 cdk bootstrap "aws://${CDK_DEFAULT_ACCOUNT}/${CDK_DEFAULT_REGION}"
 ```
+
+Step 4: Deploy stack (choose one mode)
 
 Foundation-only deploy:
 
@@ -91,7 +112,32 @@ cdk deploy --app ".venv/bin/python app.py" \
   -c advancedParsingStrategy=BEDROCK_DATA_AUTOMATION
 ```
 
-## CDK Inputs (Context / Env)
+Step 5: Sync runtime `.env` values from stack outputs (run from repo root)
+
+```bash
+cd ../..
+./scripts/sync_env_from_stack.sh --region "$AWS_REGION" --stack-name EvidentiaFoundation-dev
+```
+
+Preview-only mode:
+
+```bash
+./scripts/sync_env_from_stack.sh --region "$AWS_REGION" --stack-name EvidentiaFoundation-dev --dry-run
+```
+
+The sync script writes/updates:
+
+- `EVIDENTIA_RAW_BUCKET`
+- `EVIDENTIA_ASSETS_BUCKET`
+- `EVIDENTIA_VECTORS_BUCKET` (from `VectorsBucketArn`)
+- `EVIDENTIA_API_ROLE_ARN`
+- `EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME`
+- `EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX`
+- `BEDROCK_KNOWLEDGE_BASE_ID`
+- `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID`
+- `BEDROCK_S3_VECTORS_INDEX_NAME`
+
+## CDK Inputs and Stack Outputs
 
 Context keys resolve in this order: CDK context (`-c ...`) -> env var -> default.
 
@@ -118,52 +164,34 @@ Context keys resolve in this order: CDK context (`-c ...`) -> env var -> default
 | `advancedParsingModelArn` | `BEDROCK_ADVANCED_PARSING_MODEL_ARN` | unset | Required only for `BEDROCK_FOUNDATION_MODEL`. |
 | `advancedParsingModality` | `BEDROCK_ADVANCED_PARSING_MODALITY` | unset | For BDA, stack defaults to `MULTIMODAL` when unset. |
 
-Note:
+Deploy/runtime note:
 
 - Deploy-time explicit names use `INFRA_*` env keys.
 - Runtime keys in `.env` (`EVIDENTIA_*`, `BEDROCK_*`) should be synced from outputs, not reused as deploy-time naming overrides unless intentional.
 
-## Stack Outputs (Runtime Wiring)
+CloudFormation outputs emitted by `foundation_stack.py`:
 
-`foundation_stack.py` emits these outputs:
-
-- `StageName`
-- `RawBucketName`, `RawBucketArn`
-- `AssetsBucketName`, `AssetsBucketArn`
-- `VectorsBucketName`, `VectorsBucketArn`
-- `S3VectorsIndexName`, `S3VectorsIndexArn`
-- `RawPrefixTemplate`, `AssetsPrefixTemplate`
-- `IngestionManifestTableName`, `IngestionManifestTableArn`, `IngestionManifestSourceUriIndexName`
-- `KnowledgeBaseRoleArn`, `ApiRuntimeRoleArn`
-- `BedrockKnowledgeBaseId`, `BedrockKnowledgeBaseArn` (KB enabled only)
-- `BedrockKnowledgeBaseDataSourceId` (KB enabled only)
-
-## Sync `.env` From Stack Outputs
-
-Run from repo root:
-
-```bash
-cp .env.example .env   # first time only
-./scripts/sync_env_from_stack.sh --region us-east-1 --stack-name EvidentiaFoundation-dev
-```
-
-Preview-only mode:
-
-```bash
-./scripts/sync_env_from_stack.sh --region us-east-1 --stack-name EvidentiaFoundation-dev --dry-run
-```
-
-This sync writes/updates:
-
-- `EVIDENTIA_RAW_BUCKET`
-- `EVIDENTIA_ASSETS_BUCKET`
-- `EVIDENTIA_VECTORS_BUCKET` (from `VectorsBucketArn`)
-- `EVIDENTIA_API_ROLE_ARN`
-- `EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME`
-- `EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX`
-- `BEDROCK_KNOWLEDGE_BASE_ID`
-- `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID`
-- `BEDROCK_S3_VECTORS_INDEX_NAME`
+| Output key | Availability | Description |
+| --- | --- | --- |
+| `StageName` | always | Stage value used in stack naming and conventions. |
+| `RawBucketName` | always | Raw documents S3 bucket name. |
+| `RawBucketArn` | always | Raw documents S3 bucket ARN. |
+| `AssetsBucketName` | always | Extracted assets S3 bucket name. |
+| `AssetsBucketArn` | always | Extracted assets S3 bucket ARN. |
+| `VectorsBucketName` | always | S3 Vectors bucket name. |
+| `VectorsBucketArn` | always | S3 Vectors bucket ARN. |
+| `S3VectorsIndexName` | always | S3 Vectors index name. |
+| `S3VectorsIndexArn` | always | S3 Vectors index ARN. |
+| `RawPrefixTemplate` | always | Raw object key template (`documents-raw/{doc_id}/source.pdf`). |
+| `AssetsPrefixTemplate` | always | Bedrock-managed assets key template. |
+| `IngestionManifestTableName` | always | DynamoDB ingestion manifest table name. |
+| `IngestionManifestTableArn` | always | DynamoDB ingestion manifest table ARN. |
+| `IngestionManifestSourceUriIndexName` | always | Manifest table GSI name for source URI lookups. |
+| `KnowledgeBaseRoleArn` | always | IAM role ARN used by Bedrock KB flows. |
+| `ApiRuntimeRoleArn` | always | IAM role ARN used by API/runtime retrieval path. |
+| `BedrockKnowledgeBaseId` | `enableBedrockKb=true` | Bedrock KB ID. |
+| `BedrockKnowledgeBaseArn` | `enableBedrockKb=true` | Bedrock KB ARN. |
+| `BedrockKnowledgeBaseDataSourceId` | `enableBedrockKb=true` | Bedrock KB data source ID. |
 
 ## Smoke Test (Upload + Ingestion)
 
@@ -185,6 +213,9 @@ Resolution order in the script:
 - optional name-based KB/data source resolution via:
   - `BEDROCK_KNOWLEDGE_BASE_NAME` / `--kb-name`
   - `BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_NAME` / `--data-source-name`
+- preflight guard:
+  - script aborts when the resolved KB has multiple active data sources
+  - bypass only when intentionally testing with `--allow-multiple-data-sources`
 - ingestion manifest persistence (default enabled):
   - upserts `doc_id <-> source_uri` into DynamoDB table (`EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME`)
   - status upsert sequence: `uploaded` -> `ingestion_started` -> `ingested`
@@ -209,47 +240,111 @@ Pass signal:
 - ingestion stats show indexed/modified documents
 - assets prefix check succeeds (count can be zero for text-only PDFs)
 
-## Destroy and Cleanup
+## Clean Reset and Redeploy
 
-Destroy stack (from `infra/cdk`):
+Use this sequence when you want a reproducible clean state and immediate redeploy.
+
+Step 1: Set target stack/region and load env (repo root)
 
 ```bash
-. .venv/bin/activate
-set -a; source ../../.env; set +a
-cdk destroy "EvidentiaFoundation-dev" --app ".venv/bin/python app.py" --force
+set -a; source .env; set +a
+STACK_NAME="EvidentiaFoundation-dev"
+REGION="${AWS_REGION:-us-east-1}"
 ```
 
-Storage/vector resources are retained by design (`RETAIN` policies). DynamoDB ingestion manifest table is also retained. Use cleanup scripts/commands when you need a fully clean state.
-
-### Cleanup classic S3 leftovers
+Step 2: (Optional) remove redundant old S3/S3 Vectors resources while stack outputs still exist
 
 ```bash
 # dry-run
-./scripts/cleanup_redundant_s3_buckets.sh --region us-east-1 --stack-name EvidentiaFoundation-dev
+./scripts/cleanup_redundant_s3_buckets.sh --region "$REGION" --stack-name "$STACK_NAME"
+./scripts/cleanup_redundant_s3vectors.sh --region "$REGION" --stack-name "$STACK_NAME"
 
 # execute
-./scripts/cleanup_redundant_s3_buckets.sh --region us-east-1 --stack-name EvidentiaFoundation-dev --execute
+./scripts/cleanup_redundant_s3_buckets.sh --region "$REGION" --stack-name "$STACK_NAME" --execute
+./scripts/cleanup_redundant_s3vectors.sh --region "$REGION" --stack-name "$STACK_NAME" --execute
 ```
 
-### Cleanup S3 Vectors leftovers
+Step 3: Capture retained resource names from stack outputs (needed after destroy)
 
 ```bash
-# dry-run
-./scripts/cleanup_redundant_s3vectors.sh --region us-east-1 --stack-name EvidentiaFoundation-dev
-
-# execute (deletes indexes first, then buckets)
-./scripts/cleanup_redundant_s3vectors.sh --region us-east-1 --stack-name EvidentiaFoundation-dev --execute
-```
-
-### Cleanup ingestion manifest table leftovers
-
-```bash
-TABLE_NAME="$(aws --region us-east-1 cloudformation describe-stacks \
-  --stack-name EvidentiaFoundation-dev \
-  --query 'Stacks[0].Outputs[?OutputKey==`IngestionManifestTableName`].OutputValue' \
+RAW_BUCKET="$(aws --region "$REGION" cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --query 'Stacks[0].Outputs[?OutputKey==`RawBucketName`].OutputValue | [0]' \
   --output text)"
+ASSETS_BUCKET="$(aws --region "$REGION" cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --query 'Stacks[0].Outputs[?OutputKey==`AssetsBucketName`].OutputValue | [0]' \
+  --output text)"
+VECTORS_BUCKET="$(aws --region "$REGION" cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --query 'Stacks[0].Outputs[?OutputKey==`VectorsBucketName`].OutputValue | [0]' \
+  --output text)"
+MANIFEST_TABLE="$(aws --region "$REGION" cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --query 'Stacks[0].Outputs[?OutputKey==`IngestionManifestTableName`].OutputValue | [0]' \
+  --output text)"
+```
 
-aws --region us-east-1 dynamodb delete-table --table-name "$TABLE_NAME"
+Step 4: Destroy the stack (from `infra/cdk`)
+
+```bash
+cd infra/cdk
+. .venv/bin/activate
+set -a; source ../../.env; set +a
+cdk destroy "$STACK_NAME" --app ".venv/bin/python app.py" --force
+cd ../..
+```
+
+Step 5: Delete retained resources (S3, S3 Vectors, DynamoDB)
+
+```bash
+aws --region "$REGION" s3 rb "s3://$RAW_BUCKET" --force
+aws --region "$REGION" s3 rb "s3://$ASSETS_BUCKET" --force
+
+for index_name in $(aws --region "$REGION" s3vectors list-indexes \
+  --vector-bucket-name "$VECTORS_BUCKET" \
+  --query 'indexes[].indexName' \
+  --output text); do
+  aws --region "$REGION" s3vectors delete-index \
+    --vector-bucket-name "$VECTORS_BUCKET" \
+    --index-name "$index_name"
+done
+
+until [ "$(aws --region "$REGION" s3vectors list-indexes \
+  --vector-bucket-name "$VECTORS_BUCKET" \
+  --query 'length(indexes)' \
+  --output text)" = "0" ]; do sleep 3; done
+
+aws --region "$REGION" s3vectors delete-vector-bucket --vector-bucket-name "$VECTORS_BUCKET"
+aws --region "$REGION" dynamodb delete-table --table-name "$MANIFEST_TABLE"
+```
+
+If `aws s3 rb ... --force` fails with `BucketNotEmpty`, the bucket still has versioned objects/delete markers. Remove versions first, then retry bucket deletion.
+
+Step 6: Redeploy full stack and re-sync runtime env
+
+Recommended before redeploy: start from a clean `.env` so stale deploy-time overrides do not leak into the new stack.
+
+```bash
+cp .env .env.bak.$(date +%Y%m%d-%H%M%S)
+cp .env.example .env
+# set at least AWS_REGION and BEDROCK_EMBEDDING_MODEL_ARN (for enableBedrockKb=true)
+```
+
+```bash
+cd infra/cdk
+. .venv/bin/activate
+set -a; source ../../.env; set +a
+
+export AWS_REGION="$REGION"
+export CDK_DEFAULT_ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+export CDK_DEFAULT_REGION="$AWS_REGION"
+
+cdk synth --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
+cdk deploy --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
+cd ../..
+
+./scripts/sync_env_from_stack.sh --region "$AWS_REGION" --stack-name "$STACK_NAME"
 ```
 
 ## Troubleshooting
@@ -260,28 +355,8 @@ aws --region us-east-1 dynamodb delete-table --table-name "$TABLE_NAME"
 | `advanced_parsing_strategy=BEDROCK_FOUNDATION_MODEL requires advanced_parsing_model_arn` | Missing model ARN for FM parsing | Set `BEDROCK_ADVANCED_PARSING_MODEL_ARN` or `-c advancedParsingModelArn=...`. |
 | `ModuleNotFoundError: No module named 'boto3'` during smoke test manifest step | `python3` environment does not include runtime dependencies | Install root deps (`pip install -e .` or `uv sync`) and rerun smoke test. |
 | Smoke test cannot resolve KB/data source IDs | `.env` stale, KB disabled, or wrong stack | Re-sync `.env` from outputs, verify `enableBedrockKb=true`, check stack/region. |
+| Smoke test fails with "multiple active data sources" | Duplicate data sources exist for the same KB (often from prior dev iterations) | Remove/disable extra data sources and re-sync `.env`; use `--allow-multiple-data-sources` only for deliberate temporary tests. |
 | Smoke test cannot resolve ingestion manifest table | `.env` missing table output or stack not updated | Re-run `sync_env_from_stack.sh`, or pass `--manifest-table-name`, or deploy updated stack. |
 | Smoke test resolves deleted bucket IDs | `.env` points to old resources after redeploy | Re-run `sync_env_from_stack.sh` and retry. |
 | `cdk destroy` completes but buckets/vector buckets/table still exist | Resources are retained intentionally | Run cleanup scripts/commands above if you need full teardown. |
 | Deploy fails with resource name collisions | Explicit names pinned to old/stale resources | Remove fixed names (`INFRA_*`, KB/data source name overrides) or clean stale resources first. |
-
-## Fast Redeploy From Clean State
-
-```bash
-cd infra/cdk
-. .venv/bin/activate
-set -a; source ../../.env; set +a
-
-export AWS_REGION=us-east-1
-export CDK_DEFAULT_ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
-export CDK_DEFAULT_REGION="$AWS_REGION"
-
-cdk synth --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
-cdk deploy --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
-```
-
-Then sync runtime env again:
-
-```bash
-./scripts/sync_env_from_stack.sh --region us-east-1 --stack-name EvidentiaFoundation-dev
-```

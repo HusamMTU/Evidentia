@@ -52,8 +52,15 @@ One-page map of where core concepts live.
 - `scripts/phase1_ingestion_smoke_test.sh`: ingestion smoke validation
 - `scripts/register_ingestion_manifest.py`: ingestion manifest upsert helper
 - `scripts/sync_env_from_stack.sh`: populate env from stack outputs
+- `scripts/run_s3_vectors_inspector.sh`: launch local read-only S3 Vectors inspector UI
 - `scripts/cleanup_redundant_s3_buckets.sh`: cleanup classic S3 leftovers
 - `scripts/cleanup_redundant_s3vectors.sh`: cleanup S3 Vectors leftovers
+
+## Tools
+
+- `tools/s3_vectors_inspector/server.py`: local HTTP API + static UI for S3 Vectors inspection
+- `tools/s3_vectors_inspector/inspector.py`: config parsing + boto3 access helpers for inspector endpoints
+- `tools/s3_vectors_inspector/static/`: client-side UI (table, inspector panel, summary cards)
 
 ## Data and Assets
 

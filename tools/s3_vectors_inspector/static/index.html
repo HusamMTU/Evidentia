@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>S3 Vectors Inspector</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Read-only AWS Vector Workbench</p>
+          <h1>S3 Vectors Inspector</h1>
+          <p class="subtitle">
+            Inspect vector buckets, indexes, Bedrock lineage, and similarity behavior without mutating data.
+          </p>
+        </div>
+        <div class="status" id="status" data-tone="info">Ready</div>
+      </header>
+
+      <section class="config-layout">
+        <article class="panel control-panel compact-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Connection</h2>
+              <p class="panel-note">Choose a region, bucket, and index.</p>
+            </div>
+          </div>
+
+          <div class="controls">
+            <label>
+              Region
+              <input id="region" type="text" placeholder="us-east-1" />
+            </label>
+            <label>
+              Vector Bucket
+              <input id="vector_bucket_name" type="text" list="vector_bucket_options" placeholder="bucket name" />
+              <datalist id="vector_bucket_options"></datalist>
+            </label>
+            <label>
+              Index Name
+              <input id="index_name" type="text" list="index_options" placeholder="index name" />
+              <datalist id="index_options"></datalist>
+            </label>
+            <label>
+              Max Items
+              <input id="max_results" type="number" min="1" max="200" value="50" />
+            </label>
+          </div>
+
+          <div class="connection-tools">
+            <div class="actions connection-actions">
+              <button id="discover_resources" class="secondary">Discover Resources</button>
+              <button id="load_vectors">Load Vectors</button>
+              <button id="load_more" class="secondary">Load More</button>
+            </div>
+          </div>
+
+          <section class="inline-context">
+            <div class="inline-context-head">
+              <div>
+                <h3>Bedrock Context</h3>
+              </div>
+            </div>
+            <div class="context-grid" id="context_grid"></div>
+          </section>
+        </article>
+      </section>
+
+      <main class="layout">
+        <section class="panel list-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Vectors</h2>
+              <p class="panel-note">Select one to inspect full payload or seed a similarity query.</p>
+            </div>
+            <div class="list-tools">
+              <div class="pill subtle" id="page_state">No vectors loaded</div>
+              <input id="search" type="search" placeholder="Filter by key, source, text preview, or data source ID" />
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Data Source</th>
+                  <th>Modality</th>
+                  <th>Page</th>
+                  <th>Source</th>
+                  <th>Preview</th>
+                </tr>
+              </thead>
+              <tbody id="vectors_body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel details-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Selection</h2>
+              <p class="panel-note">Summary cards are opinionated; raw JSON remains available below.</p>
+            </div>
+          </div>
+
+          <div id="selected_content" hidden>
+            <div id="selected_overview" class="detail-grid"></div>
+
+            <section class="detail-block">
+              <div class="panel-head inline">
+                <h3>Text Preview</h3>
+              </div>
+              <div id="selected_text" class="text-block"></div>
+            </section>
+
+            <section class="detail-block">
+              <details open>
+                <summary>Parsed Bedrock Metadata</summary>
+                <pre id="selected_metadata" class="json"></pre>
+              </details>
+              <details>
+                <summary>Raw Vector Payload</summary>
+                <div class="detail-option-row">
+                  <label class="checkbox payload-option">
+                    <input id="include_vector_data" type="checkbox" />
+                    <span>Include embedding data in this payload.</span>
+                  </label>
+                </div>
+                <pre id="selected_payload" class="json"></pre>
+              </details>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <section class="panel similarity-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Similarity Matches</h2>
+            <p class="panel-note">Query by the selected row or enter a specific vector key.</p>
+          </div>
+        </div>
+
+        <div class="similarity-toolbar">
+          <label class="similarity-key-field">
+            Vector Key
+            <input id="similarity_key" type="text" placeholder="selected row or explicit key" />
+          </label>
+          <label class="compact-field">
+            Top K
+            <input id="top_k" type="number" min="1" max="100" value="10" />
+          </label>
+          <button id="find_similar" class="secondary">Find Similar</button>
+        </div>
+
+        <div class="similarity-meta">
+          <div class="pill subtle" id="distance_metric_badge">Metric unavailable</div>
+        </div>
+
+        <div id="similar_results_table" class="subpanel"></div>
+        <details>
+          <summary>Raw Similarity JSON</summary>
+          <pre id="similar_results_raw" class="json"></pre>
+        </details>
+      </section>
+
+      <section class="panel summary-panel">
+        <div class="panel-head summary-head">
+          <div>
+            <h2>Sample Summary</h2>
+          </div>
+          <article class="summary-stat">
+            <span class="summary-stat-label">Sample Size</span>
+            <strong class="summary-stat-value" id="summary_sample_size">0</strong>
+          </article>
+        </div>
+
+        <div class="summary-grid">
+          <section class="summary-block">
+            <h3>Data Sources</h3>
+            <div id="data_source_summary" class="summary-list"></div>
+          </section>
+          <section class="summary-block">
+            <h3>Modalities</h3>
+            <div id="modality_summary" class="summary-list"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
