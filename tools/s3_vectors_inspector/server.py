@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -20,7 +22,9 @@ from tools.s3_vectors_inspector.inspector import (
     InspectorConfigError,
     S3VectorsInspectorClient,
     build_config,
+    build_env_context,
     parse_bedrock_metadata,
+    resolve_config_defaults,
     summarize_by_data_source,
     summarize_vector,
 )
@@ -52,6 +56,26 @@ def _parse_int(value: str | None, *, default: int, minimum: int, maximum: int) -
     except ValueError as exc:
         raise ValueError(f"Invalid integer value: {value!r}") from exc
     return max(minimum, min(maximum, parsed))
+
+
+def _json_compatible(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(key): _json_compatible(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_json_compatible(item) for item in value]
+    return value
+
+
+def _json_default(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
 
 
 class InspectorHandler(BaseHTTPRequestHandler):
@@ -86,14 +110,28 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 self._json({"ok": True})
                 return
             if path == "/api/config":
-                config = self._build_config_from_params(params)
-                self._json({"config": config.as_dict()})
+                defaults = self._resolve_config_defaults_from_params(params)
+                validation_error = None
+                try:
+                    self._build_config_from_params(params)
+                except InspectorConfigError as exc:
+                    validation_error = str(exc)
+                self._json(
+                    {
+                        "config": defaults.as_dict(),
+                        "env_context": self._build_env_context().as_dict(),
+                        "validation_error": validation_error,
+                    }
+                )
                 return
             if path == "/api/vector-buckets":
                 self._handle_vector_buckets(params)
                 return
             if path == "/api/indexes":
                 self._handle_indexes(params)
+                return
+            if path == "/api/index":
+                self._handle_index(params)
                 return
             if path == "/api/vectors":
                 self._handle_vectors(params)
@@ -126,19 +164,34 @@ class InspectorHandler(BaseHTTPRequestHandler):
             env=os.environ,
         )
 
+    def _resolve_config_defaults_from_params(self, params: dict[str, list[str]]):
+        return resolve_config_defaults(
+            region=_first_value(params, "region"),
+            vector_bucket_name=_first_value(params, "vector_bucket_name"),
+            index_name=_first_value(params, "index_name"),
+            index_arn=_first_value(params, "index_arn"),
+            env=os.environ,
+        )
+
+    def _build_env_context(self):
+        return build_env_context(os.environ)
+
     def _client_from_params(self, params: dict[str, list[str]]) -> S3VectorsInspectorClient:
         return S3VectorsInspectorClient.from_config(self._build_config_from_params(params))
+
+    def _s3vectors_boto_client(self, *, region: str):
+        try:
+            import boto3
+        except ImportError as exc:  # pragma: no cover - runtime environment dependent
+            raise RuntimeError("boto3 is required to run the S3 Vectors inspector.") from exc
+        return boto3.client("s3vectors", region_name=region)
 
     def _handle_vector_buckets(self, params: dict[str, list[str]]) -> None:
         region = _first_value(params, "region") or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
         if not region:
             raise InspectorConfigError("Missing region. Set AWS_REGION or pass ?region=...")
 
-        try:
-            import boto3
-        except ImportError as exc:  # pragma: no cover - runtime environment dependent
-            raise RuntimeError("boto3 is required to run the S3 Vectors inspector.") from exc
-        client = boto3.client("s3vectors", region_name=region)
+        client = self._s3vectors_boto_client(region=region)
 
         max_results = _parse_int(_first_value(params, "max_results"), default=100, minimum=1, maximum=500)
         next_token = _first_value(params, "next_token")
@@ -155,26 +208,52 @@ class InspectorHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_indexes(self, params: dict[str, list[str]]) -> None:
-        client = self._client_from_params(params)
+        defaults = self._resolve_config_defaults_from_params(params)
+        if not defaults.region:
+            raise InspectorConfigError("Missing region. Set AWS_REGION/AWS_DEFAULT_REGION or pass region.")
+
+        vector_bucket_name = _first_value(params, "vector_bucket_name") or defaults.vector_bucket_name
+        if not vector_bucket_name:
+            raise InspectorConfigError(
+                "Missing vector bucket. Set EVIDENTIA_VECTORS_BUCKET (name or arn) or pass vector_bucket_name."
+            )
+
+        client = self._s3vectors_boto_client(region=defaults.region)
         max_results = _parse_int(_first_value(params, "max_results"), default=100, minimum=1, maximum=500)
         next_token = _first_value(params, "next_token")
-        bucket_override = _first_value(params, "vector_bucket_name")
-
-        response = client.list_indexes(
-            vector_bucket_name=bucket_override,
-            max_results=max_results,
-            next_token=next_token,
-        )
+        kwargs: dict[str, Any] = {"vectorBucketName": vector_bucket_name, "maxResults": max_results}
+        if next_token:
+            kwargs["nextToken"] = next_token
+        response = client.list_indexes(**kwargs)
         self._json(
             {
                 "indexes": response.get("indexes", []),
                 "next_token": response.get("nextToken"),
+                "config": {
+                    "region": defaults.region,
+                    "vector_bucket_name": vector_bucket_name,
+                    "index_name": defaults.index_name,
+                    "index_arn": defaults.index_arn,
+                },
+            }
+        )
+
+    def _handle_index(self, params: dict[str, list[str]]) -> None:
+        client = self._client_from_params(params)
+        index = client.get_index()
+        self._json(
+            {
                 "config": client.config.as_dict(),
+                "index": index,
+                "dimension": index.get("dimension"),
+                "distance_metric": index.get("distanceMetric"),
+                "data_type": index.get("dataType"),
             }
         )
 
     def _handle_vectors(self, params: dict[str, list[str]]) -> None:
         client = self._client_from_params(params)
+        env_context = self._build_env_context()
         max_results = _parse_int(_first_value(params, "max_results"), default=50, minimum=1, maximum=200)
         next_token = _first_value(params, "next_token")
         return_metadata = _parse_bool(_first_value(params, "return_metadata"), default=True)
@@ -187,11 +266,15 @@ class InspectorHandler(BaseHTTPRequestHandler):
             return_data=return_data,
         )
         vectors = response.get("vectors", [])
-        rows = [summarize_vector(vector) for vector in vectors]
+        rows = [
+            summarize_vector(vector, current_data_source_id=env_context.knowledge_base_data_source_id or None)
+            for vector in vectors
+        ]
 
         self._json(
             {
                 "config": client.config.as_dict(),
+                "env_context": env_context.as_dict(),
                 "rows": rows,
                 "vectors": vectors,
                 "next_token": response.get("nextToken"),
@@ -200,6 +283,7 @@ class InspectorHandler(BaseHTTPRequestHandler):
 
     def _handle_vector(self, params: dict[str, list[str]]) -> None:
         client = self._client_from_params(params)
+        env_context = self._build_env_context()
         key = _first_value(params, "key")
         if not key:
             raise ValueError("Missing required query parameter: key")
@@ -218,13 +302,17 @@ class InspectorHandler(BaseHTTPRequestHandler):
             {
                 "config": client.config.as_dict(),
                 "vector": vector,
-                "summary": summarize_vector(vector),
+                "summary": summarize_vector(
+                    vector,
+                    current_data_source_id=env_context.knowledge_base_data_source_id or None,
+                ),
                 "parsed_bedrock_metadata": parsed_meta,
             }
         )
 
     def _handle_query_by_key(self, params: dict[str, list[str]]) -> None:
         client = self._client_from_params(params)
+        env_context = self._build_env_context()
         key = _first_value(params, "key")
         if not key:
             raise ValueError("Missing required query parameter: key")
@@ -238,10 +326,16 @@ class InspectorHandler(BaseHTTPRequestHandler):
             {
                 "config": client.config.as_dict(),
                 "distance_metric": response.get("distance_metric"),
-                "seed": summarize_vector(response["seed"]),
+                "seed": summarize_vector(
+                    response["seed"],
+                    current_data_source_id=env_context.knowledge_base_data_source_id or None,
+                ),
                 "matches": [
                     {
-                        "summary": summarize_vector(match),
+                        "summary": summarize_vector(
+                            match,
+                            current_data_source_id=env_context.knowledge_base_data_source_id or None,
+                        ),
                         "distance": match.get("distance"),
                         "key": match.get("key"),
                     }
@@ -252,6 +346,7 @@ class InspectorHandler(BaseHTTPRequestHandler):
 
     def _handle_data_source_summary(self, params: dict[str, list[str]]) -> None:
         client = self._client_from_params(params)
+        env_context = self._build_env_context()
         sample_size = _parse_int(_first_value(params, "sample_size"), default=200, minimum=1, maximum=1000)
 
         response = client.list_vectors(
@@ -261,11 +356,15 @@ class InspectorHandler(BaseHTTPRequestHandler):
             return_data=False,
         )
         vectors = response.get("vectors", [])
-        summary = summarize_by_data_source(vectors)
+        summary = summarize_by_data_source(
+            vectors,
+            current_data_source_id=env_context.knowledge_base_data_source_id or None,
+        )
 
         self._json(
             {
                 "config": client.config.as_dict(),
+                "env_context": env_context.as_dict(),
                 "sample_size": len(vectors),
                 **summary,
             }
@@ -283,7 +382,7 @@ class InspectorHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _json(self, payload: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
-        body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
+        body = json.dumps(_json_compatible(payload), ensure_ascii=True, default=_json_default).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))

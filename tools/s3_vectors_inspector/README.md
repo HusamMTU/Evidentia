@@ -5,8 +5,10 @@ A small read-only web UI for browsing S3 Vectors index contents, inspired by Att
 ## What It Does
 
 - Loads active S3 Vectors config from env (`AWS_REGION`, `EVIDENTIA_VECTORS_BUCKET`, `BEDROCK_S3_VECTORS_INDEX_NAME`) or query params.
+- Discovers vector buckets and indexes from the selected region.
 - Lists vectors with metadata summaries.
-- Inspects a selected vector payload.
+- Highlights whether vectors belong to the current Bedrock KB data source or a historical one.
+- Inspects a selected vector summary, parsed Bedrock metadata, raw payload, and current index dimension.
 - Shows data source/modality distribution summaries.
 - Runs similarity search by selected vector key (`QueryVectors` using that key's embedding).
 
@@ -33,6 +35,7 @@ Then open:
 
 - `s3vectors:ListVectorBuckets`
 - `s3vectors:ListIndexes`
+- `s3vectors:GetIndex`
 - `s3vectors:ListVectors`
 - `s3vectors:GetVectors`
 - `s3vectors:QueryVectors`
@@ -45,4 +48,4 @@ Optional for asset preview extensions:
 
 - This is a scaffold, not a production-hardened admin app.
 - It does not mutate vector data.
-- Large metadata fields are intentionally summarized in the table view.
+- Large metadata fields are intentionally summarized in the table view, with raw JSON available in the selection panel.

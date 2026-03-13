@@ -21,6 +21,27 @@ class InspectorConfig:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class InspectorConfigDefaults:
+    region: str = ""
+    vector_bucket_name: str = ""
+    index_name: str = ""
+    index_arn: str = ""
+
+    def as_dict(self) -> dict[str, str]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class InspectorEnvContext:
+    knowledge_base_id: str = ""
+    knowledge_base_data_source_id: str = ""
+    assets_bucket_name: str = ""
+
+    def as_dict(self) -> dict[str, str]:
+        return asdict(self)
+
+
 class InspectorConfigError(ValueError):
     """Raised when required S3 Vectors inspector configuration is missing."""
 
@@ -64,6 +85,40 @@ def build_config(
     index_arn: str | None,
     env: Mapping[str, str] | None = None,
 ) -> InspectorConfig:
+    defaults = resolve_config_defaults(
+        region=region,
+        vector_bucket_name=vector_bucket_name,
+        index_name=index_name,
+        index_arn=index_arn,
+        env=env,
+    )
+
+    if not defaults.region:
+        raise InspectorConfigError("Missing region. Set AWS_REGION/AWS_DEFAULT_REGION or pass region.")
+    if not defaults.vector_bucket_name:
+        raise InspectorConfigError(
+            "Missing vector bucket. Set EVIDENTIA_VECTORS_BUCKET (name or arn) or pass vector_bucket_name."
+        )
+    if not defaults.index_name:
+        raise InspectorConfigError(
+            "Missing index name. Set BEDROCK_S3_VECTORS_INDEX_NAME (arn) or pass index_name."
+        )
+
+    return InspectorConfig(
+        region=defaults.region,
+        vector_bucket_name=defaults.vector_bucket_name,
+        index_name=defaults.index_name,
+    )
+
+
+def resolve_config_defaults(
+    *,
+    region: str | None,
+    vector_bucket_name: str | None,
+    index_name: str | None,
+    index_arn: str | None,
+    env: Mapping[str, str] | None = None,
+) -> InspectorConfigDefaults:
     env_map = env or os.environ
 
     effective_region = _pick_non_empty(region, env_map.get("AWS_REGION"), env_map.get("AWS_DEFAULT_REGION"))
@@ -83,21 +138,24 @@ def build_config(
         if not effective_index_name and arn_index:
             effective_index_name = arn_index
 
-    if not effective_region:
-        raise InspectorConfigError("Missing region. Set AWS_REGION/AWS_DEFAULT_REGION or pass region.")
-    if not effective_bucket:
-        raise InspectorConfigError(
-            "Missing vector bucket. Set EVIDENTIA_VECTORS_BUCKET (name or arn) or pass vector_bucket_name."
-        )
-    if not effective_index_name:
-        raise InspectorConfigError(
-            "Missing index name. Set BEDROCK_S3_VECTORS_INDEX_NAME (arn) or pass index_name."
-        )
+    normalized_bucket = ""
+    if effective_bucket:
+        normalized_bucket = parse_vector_bucket_name(effective_bucket)
 
-    return InspectorConfig(
-        region=effective_region,
-        vector_bucket_name=parse_vector_bucket_name(effective_bucket),
-        index_name=effective_index_name,
+    return InspectorConfigDefaults(
+        region=effective_region or "",
+        vector_bucket_name=normalized_bucket,
+        index_name=effective_index_name or "",
+        index_arn=effective_index_arn or "",
+    )
+
+
+def build_env_context(env: Mapping[str, str] | None = None) -> InspectorEnvContext:
+    env_map = env or os.environ
+    return InspectorEnvContext(
+        knowledge_base_id=_pick_non_empty(env_map.get("BEDROCK_KNOWLEDGE_BASE_ID")) or "",
+        knowledge_base_data_source_id=_pick_non_empty(env_map.get("BEDROCK_KNOWLEDGE_BASE_DATA_SOURCE_ID")) or "",
+        assets_bucket_name=_pick_non_empty(env_map.get("EVIDENTIA_ASSETS_BUCKET")) or "",
     )
 
 
@@ -112,7 +170,11 @@ def parse_bedrock_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def summarize_vector(vector: Mapping[str, Any]) -> dict[str, Any]:
+def summarize_vector(
+    vector: Mapping[str, Any],
+    *,
+    current_data_source_id: str | None = None,
+) -> dict[str, Any]:
     key = vector.get("key")
     metadata = vector.get("metadata")
     metadata_map = metadata if isinstance(metadata, Mapping) else {}
@@ -123,22 +185,40 @@ def summarize_vector(vector: Mapping[str, Any]) -> dict[str, Any]:
 
     related_contents = parsed_meta.get("relatedContents")
     related_count = len(related_contents) if isinstance(related_contents, list) else 0
+    related_content_types: dict[str, int] = {}
+    if isinstance(related_contents, list):
+        for item in related_contents:
+            if not isinstance(item, Mapping):
+                continue
+            location_type = item.get("locationType")
+            label = location_type if isinstance(location_type, str) and location_type else "<unknown>"
+            related_content_types[label] = related_content_types.get(label, 0) + 1
 
     text_value = metadata_map.get("AMAZON_BEDROCK_TEXT")
     text_preview = None
+    text_length = 0
     if isinstance(text_value, str) and text_value:
         compact = " ".join(text_value.split())
         text_preview = compact[:180] + ("..." if len(compact) > 180 else "")
+        text_length = len(text_value)
+
+    data_source_id = metadata_map.get("x-amz-bedrock-kb-data-source-id")
+    is_current_data_source: bool | None = None
+    if current_data_source_id:
+        is_current_data_source = data_source_id == current_data_source_id
 
     return {
         "key": key,
-        "data_source_id": metadata_map.get("x-amz-bedrock-kb-data-source-id"),
+        "data_source_id": data_source_id,
         "modality": metadata_map.get("x-amz-bedrock-kb-source-file-modality"),
         "mime_type": metadata_map.get("x-amz-bedrock-kb-source-file-mime-type"),
         "page_number": metadata_map.get("x-amz-bedrock-kb-document-page-number") or parsed_meta.get("pageNumber"),
         "source_uri": source_uri,
         "related_asset_count": related_count,
+        "related_content_types": related_content_types,
         "text_preview": text_preview,
+        "text_length": text_length,
+        "is_current_data_source": is_current_data_source,
     }
 
 
@@ -177,6 +257,14 @@ class S3VectorsInspectorClient:
         if next_token:
             kwargs["nextToken"] = next_token
         return self._client.list_indexes(**kwargs)
+
+    def get_index(self) -> dict[str, Any]:
+        response = self._client.get_index(
+            vectorBucketName=self.config.vector_bucket_name,
+            indexName=self.config.index_name,
+        )
+        index = response.get("index")
+        return index if isinstance(index, dict) else {}
 
     def list_vectors(
         self,
@@ -247,7 +335,11 @@ class S3VectorsInspectorClient:
         }
 
 
-def summarize_by_data_source(vectors: list[Mapping[str, Any]]) -> dict[str, Any]:
+def summarize_by_data_source(
+    vectors: list[Mapping[str, Any]],
+    *,
+    current_data_source_id: str | None = None,
+) -> dict[str, Any]:
     counts: dict[str, int] = {}
     modality_counts: dict[str, int] = {}
 
@@ -267,7 +359,18 @@ def summarize_by_data_source(vectors: list[Mapping[str, Any]]) -> dict[str, Any]
         else:
             modality_counts["<missing>"] = modality_counts.get("<missing>", 0) + 1
 
+    active_data_source_ids = [ds_id for ds_id in counts if ds_id != "<missing>"]
+    historical_data_source_ids = [
+        ds_id for ds_id in active_data_source_ids if current_data_source_id and ds_id != current_data_source_id
+    ]
+    historical_count = sum(counts[ds_id] for ds_id in historical_data_source_ids)
+
     return {
         "data_source_counts": dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))),
         "modality_counts": dict(sorted(modality_counts.items(), key=lambda item: (-item[1], item[0]))),
+        "current_data_source_id": current_data_source_id or "",
+        "current_data_source_vector_count": counts.get(current_data_source_id, 0) if current_data_source_id else 0,
+        "historical_data_source_ids": historical_data_source_ids,
+        "historical_data_source_vector_count": historical_count,
+        "unique_data_source_count": len(active_data_source_ids),
     }
