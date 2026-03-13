@@ -1,4 +1,8 @@
-# Evidentia
+<div align="center">
+  <h1>Evidentia</h1>
+  <p><strong>Grounded Multimodal Document Intelligence</strong></p>
+  <p>AWS foundation stack · provenance join layer · validation contracts · S3 Vectors inspection</p>
+</div>
 
 Evidentia is a multimodal grounded document intelligence system. This repo currently focuses on the AWS foundation stack, provenance join layer, validation contracts, and a read-only S3 Vectors inspector used to debug Bedrock Knowledge Base ingestion and retrieval behavior.
 
