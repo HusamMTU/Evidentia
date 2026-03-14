@@ -244,86 +244,19 @@ Pass signal:
 
 Use this sequence when you want a reproducible clean state and immediate redeploy.
 
-Step 1: Set target stack/region and load env (repo root)
+Preferred path: run the cleanup script, then redeploy.
+
+Step 1: Run the clean-reset script from repo root
 
 ```bash
-set -a; source .env; set +a
-STACK_NAME="EvidentiaFoundation-dev"
-REGION="${AWS_REGION:-us-east-1}"
+./scripts/clean_reset_foundation.sh --region us-east-1 --stack-name EvidentiaFoundation-dev
 ```
 
-Step 2: (Optional) remove redundant old S3/S3 Vectors resources while stack outputs still exist
+This script automates the destructive cleanup through retained-resource removal and
+optional Bedrock drift cleanup. It stops before redeploy so you can reset `.env`
+or adjust deploy-time config first.
 
-```bash
-# dry-run
-./scripts/cleanup_redundant_s3_buckets.sh --region "$REGION" --stack-name "$STACK_NAME"
-./scripts/cleanup_redundant_s3vectors.sh --region "$REGION" --stack-name "$STACK_NAME"
-
-# execute
-./scripts/cleanup_redundant_s3_buckets.sh --region "$REGION" --stack-name "$STACK_NAME" --execute
-./scripts/cleanup_redundant_s3vectors.sh --region "$REGION" --stack-name "$STACK_NAME" --execute
-```
-
-Step 3: Capture retained resource names from stack outputs (needed after destroy)
-
-```bash
-RAW_BUCKET="$(aws --region "$REGION" cloudformation describe-stacks \
-  --stack-name "$STACK_NAME" \
-  --query 'Stacks[0].Outputs[?OutputKey==`RawBucketName`].OutputValue | [0]' \
-  --output text)"
-ASSETS_BUCKET="$(aws --region "$REGION" cloudformation describe-stacks \
-  --stack-name "$STACK_NAME" \
-  --query 'Stacks[0].Outputs[?OutputKey==`AssetsBucketName`].OutputValue | [0]' \
-  --output text)"
-VECTORS_BUCKET="$(aws --region "$REGION" cloudformation describe-stacks \
-  --stack-name "$STACK_NAME" \
-  --query 'Stacks[0].Outputs[?OutputKey==`VectorsBucketName`].OutputValue | [0]' \
-  --output text)"
-MANIFEST_TABLE="$(aws --region "$REGION" cloudformation describe-stacks \
-  --stack-name "$STACK_NAME" \
-  --query 'Stacks[0].Outputs[?OutputKey==`IngestionManifestTableName`].OutputValue | [0]' \
-  --output text)"
-```
-
-Step 4: Destroy the stack (from `infra/cdk`)
-
-```bash
-cd infra/cdk
-. .venv/bin/activate
-set -a; source ../../.env; set +a
-cdk destroy "$STACK_NAME" --app ".venv/bin/python app.py" --force
-cd ../..
-```
-
-Step 5: Delete retained resources (S3, S3 Vectors, DynamoDB)
-
-```bash
-aws --region "$REGION" s3 rb "s3://$RAW_BUCKET" --force
-aws --region "$REGION" s3 rb "s3://$ASSETS_BUCKET" --force
-
-for index_name in $(aws --region "$REGION" s3vectors list-indexes \
-  --vector-bucket-name "$VECTORS_BUCKET" \
-  --query 'indexes[].indexName' \
-  --output text); do
-  aws --region "$REGION" s3vectors delete-index \
-    --vector-bucket-name "$VECTORS_BUCKET" \
-    --index-name "$index_name"
-done
-
-until [ "$(aws --region "$REGION" s3vectors list-indexes \
-  --vector-bucket-name "$VECTORS_BUCKET" \
-  --query 'length(indexes)' \
-  --output text)" = "0" ]; do sleep 3; done
-
-aws --region "$REGION" s3vectors delete-vector-bucket --vector-bucket-name "$VECTORS_BUCKET"
-aws --region "$REGION" dynamodb delete-table --table-name "$MANIFEST_TABLE"
-```
-
-If `aws s3 rb ... --force` fails with `BucketNotEmpty`, the bucket still has versioned objects/delete markers. Remove versions first, then retry bucket deletion.
-
-Step 6: Redeploy full stack and re-sync runtime env
-
-Recommended before redeploy: start from a clean `.env` so stale deploy-time overrides do not leak into the new stack.
+Step 2: Reset `.env` before redeploy
 
 ```bash
 cp .env .env.bak.$(date +%Y%m%d-%H%M%S)
@@ -331,21 +264,35 @@ cp .env.example .env
 # set at least AWS_REGION and BEDROCK_EMBEDDING_MODEL_ARN (for enableBedrockKb=true)
 ```
 
+Step 3: Redeploy the full stack
+
 ```bash
 cd infra/cdk
 . .venv/bin/activate
 set -a; source ../../.env; set +a
 
-export AWS_REGION="$REGION"
+export AWS_REGION="${AWS_REGION:-us-east-1}"
 export CDK_DEFAULT_ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 export CDK_DEFAULT_REGION="$AWS_REGION"
 
 cdk synth --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
 cdk deploy --app ".venv/bin/python app.py" -c stage=dev -c enableBedrockKb=true
-cd ../..
-
-./scripts/sync_env_from_stack.sh --region "$AWS_REGION" --stack-name "$STACK_NAME"
 ```
+
+Step 4: Sync runtime `.env` from stack outputs
+
+```bash
+cd ../..
+./scripts/sync_env_from_stack.sh --region "$AWS_REGION" --stack-name EvidentiaFoundation-dev
+```
+
+Manual fallback:
+
+- Use the manual cleanup commands only when you need to debug a failed reset step.
+- The manual sequence is: load env and target stack, optionally remove redundant old S3/S3 Vectors resources, capture retained resource names from stack outputs, destroy the stack, delete retained S3 buckets, delete S3 Vectors indexes then the vector bucket, delete the manifest table, then optionally delete already-drifted Bedrock KB/data source resources.
+- Use `aws --no-cli-pager` for those commands.
+- When resolving the vectors bucket manually, use the actual bucket name. If a stack output gives `VectorsBucketArn`, normalize it to the short bucket name before calling `s3vectors list-indexes` or `delete-vector-bucket`.
+- If an S3 bucket delete fails with `BucketNotEmpty`, remove versioned objects/delete markers first, then retry bucket deletion.
 
 ## Troubleshooting
 
