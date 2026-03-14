@@ -27,6 +27,7 @@ infra/cdk/cdk.out/
 
 # Env files
 .env
+/.env.bak.*
 
 # Local runtime artifacts
 .evidentia/
