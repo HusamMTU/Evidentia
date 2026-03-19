@@ -13,13 +13,13 @@ If this roadmap conflicts with implementation reality, follow:
 - Contracts index and validation flow in `docs/reference/CONTRACTS.md`
 - Executable checks in `tests/` and `docs/reference/TEST_STRATEGY.md`
 
-## Current Implementation Status (as of 2026-03-02)
+## Current Implementation Status (as of 2026-03-19)
 
 - Phase 0 (Contracts and Invariants): **Completed in repo**
   - Schemas: `schemas/query-request.schema.json`, `schemas/model-answer.schema.json`, `schemas/evidence-item.schema.json`, `schemas/query-response.schema.json`
   - Validation layer: `validation/`
   - Contract fixtures and tests: `tests/fixtures/`, `tests/test_contract_fixtures.py`
-- Phase 1 (Cloud Foundation and Security): **In progress, foundation deployed**
+- Phase 1 (Cloud Foundation and Security): **Mostly implemented in repo; live deploy state should be verified per environment**
   - CDK app and stack: `infra/cdk/app.py`, `infra/cdk/evidentia_cdk/foundation_stack.py`
   - DynamoDB ingestion manifest table + stack outputs wired in CDK and env sync scripts
   - Infra docs and runbook: `infra/cdk/README.md`
@@ -30,10 +30,14 @@ If this roadmap conflicts with implementation reality, follow:
   - Operational cleanup scripts for repeated deployment attempts:
     - `scripts/cleanup_redundant_s3_buckets.sh` (classic S3)
     - `scripts/cleanup_redundant_s3vectors.sh` (S3 Vectors)
-- Phase 2 (Ingestion Pipeline MVP): **Partially implemented**
+- Cross-cutting operational tooling: **Implemented**
+  - Read-only S3 Vectors inspector: `tools/s3_vectors_inspector/`
+  - Inspector tests: `tests/test_s3_vectors_inspector.py`
+- Phase 2 (Ingestion Pipeline MVP): **Partially implemented; plumbing exists, but the gate is not yet evidenced in repo**
   - Manifest persistence/join layer: `provenance/manifest_store.py`, `provenance/retrieval_normalizer.py`
   - Unit tests: `tests/test_ingestion_manifest_store.py`, `tests/test_retrieval_provenance_normalizer.py`
-- Phases 3-7: **Not implemented yet**
+  - Existing scripts support single-document smoke validation and manifest upserts, but the repo does not yet contain a committed seed corpus manifest or ingestion verification artifact
+- Phases 3-7: **No phase-complete runtime implementations in repo yet**
 
 ## Planning Principles
 
@@ -41,6 +45,7 @@ If this roadmap conflicts with implementation reality, follow:
 - Preserve multi-document behavior as the default from the first implementation.
 - Validate contracts early (metadata, evidence objects, output JSON) to avoid rework.
 - Ship vertical slices, but with hard gates on evidence and citation correctness.
+- Treat week labels as sequencing hints, not a calendar commitment; refresh this status block with explicit dates when implementation drifts.
 
 ## MVP Success Criteria
 
@@ -154,11 +159,18 @@ Goal: Make document ingestion reproducible and verify metadata quality.
   - mixed-media
   - at least a few docs with overlapping topics for cross-doc QA
 
+Recommended repo layout for the seed corpus:
+
+- Commit the manifest and documentation under `datasets/seed_corpus/`
+- Use `datasets/seed_corpus/manifest.jsonl` (or `.csv`) for `doc_id`, `doc_type`, local source path, licensing/redistribution notes, and intended ingestion status
+- Use `datasets/seed_corpus/README.md` for provenance, curation rules, and how to sync/fetch documents
+- Only commit tiny redistributable sample documents under `datasets/seed_corpus/source/`; keep large, licensed, or sensitive PDFs out of Git and fetch them via script or store them in the target raw bucket
+
 ### Deliverables
 
 - Ingestion script/service endpoint
 - Ingestion manifest store and upsert utility (`scripts/register_ingestion_manifest.py`)
-- Seed dataset manifest (`doc_id`, `doc_type`, source path)
+- Seed dataset manifest (`doc_id`, `doc_type`, source path`) in `datasets/seed_corpus/manifest.jsonl` or `datasets/seed_corpus/manifest.csv`
 - Ingestion verification report (simple JSON/CSV/log output is fine)
 
 ### Gate
@@ -268,7 +280,7 @@ Goal: Add grounded answer generation on top of the deterministic evidence pipeli
 ### Deliverables
 
 - Claude invocation service
-- Validation layer (schema + citation integrity checks)
+- Answer-path integration of the existing validation layer (schema + citation integrity checks)
 - End-to-end query path returning answer + evidence
 
 ### Gate
