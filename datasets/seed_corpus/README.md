@@ -22,7 +22,7 @@ represent one intended document and include:
 - `theme_tags`: pipe-delimited topical tags to help curate cross-document QA
 - `modality_profile`: short label such as `text-heavy`, `table-heavy`, `figure-heavy`, or `mixed-media`
 - `source_path`: repo-relative local destination for fetched documents
-- `source_url`: canonical upstream URL used to fetch the document
+- `source_url`: canonical upstream URL used to fetch the document; use version-pinned URLs for revisioned sources such as arXiv
 - `sha256`: expected SHA-256 checksum for the fetched file
 - `license_note`: redistribution status or provenance constraint
 - `ingestion_status`: lifecycle marker such as `planned`, `uploaded`, `ingested`, or `verified`
@@ -54,7 +54,10 @@ python3 scripts/fetch_seed_corpus.py
 ```
 
 The script downloads each document to the `source_path` listed in the manifest
-and verifies the resulting file against the stored `sha256` checksum.
+and verifies the resulting file against the stored `sha256` checksum. For arXiv
+sources, the manifest should use explicit revisioned URLs such as
+`https://arxiv.org/pdf/1706.03762v7.pdf` instead of floating latest-version
+links.
 
 Checksums matter because they give us a stable fingerprint of the exact bytes we
 expect. If an upstream PDF changes, a mirror serves a different file, or a

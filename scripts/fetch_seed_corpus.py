@@ -4,21 +4,25 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import re
 import shutil
 import sys
 import tempfile
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MANIFEST = REPO_ROOT / "datasets" / "seed_corpus" / "manifest.csv"
+SOURCE_ROOT = (REPO_ROOT / "datasets" / "seed_corpus" / "source").resolve()
 REQUIRED_COLUMNS = {
     "doc_id",
     "source_path",
     "source_url",
     "sha256",
 }
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,6 +66,42 @@ def load_manifest(path: Path) -> list[dict[str, str]]:
     return rows
 
 
+def validate_source_url(source_url: str) -> None:
+    parsed = urlparse(source_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise SystemExit(f"Invalid source_url: {source_url!r}")
+
+    if parsed.netloc != "arxiv.org":
+        return
+
+    if not (parsed.path.startswith("/abs/") or parsed.path.startswith("/pdf/")):
+        return
+
+    tail = parsed.path.rsplit("/", 1)[-1]
+    if tail.endswith(".pdf"):
+        tail = tail[:-4]
+    if not re.search(r"v[0-9]+$", tail):
+        raise SystemExit(
+            "arXiv source_url values must pin an explicit revision such as "
+            "'https://arxiv.org/pdf/1706.03762v7.pdf'."
+        )
+
+
+def resolve_source_path(raw_source_path: str) -> Path:
+    candidate = (REPO_ROOT / raw_source_path.strip()).resolve()
+    try:
+        candidate.relative_to(SOURCE_ROOT)
+    except ValueError as exc:
+        raise SystemExit(
+            f"source_path must stay under {SOURCE_ROOT.relative_to(REPO_ROOT)}, got: {raw_source_path!r}"
+        ) from exc
+
+    if candidate == SOURCE_ROOT or not candidate.name:
+        raise SystemExit(f"source_path must target a file inside source/, got: {raw_source_path!r}")
+
+    return candidate
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -93,9 +133,13 @@ def download_to_temp(url: str, destination_dir: Path, timeout: int) -> tuple[Pat
 
 def fetch_row(row: dict[str, str], *, force: bool, timeout: int) -> str:
     doc_id = row["doc_id"].strip()
-    source_path = (REPO_ROOT / row["source_path"].strip()).resolve()
+    source_path = resolve_source_path(row["source_path"])
     source_url = row["source_url"].strip()
     expected_sha = row["sha256"].strip().lower()
+
+    validate_source_url(source_url)
+    if not SHA256_RE.fullmatch(expected_sha):
+        raise SystemExit(f"Invalid sha256 for {doc_id}: {expected_sha!r}")
 
     source_path.parent.mkdir(parents=True, exist_ok=True)
 
