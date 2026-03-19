@@ -1,12 +1,16 @@
-# Source Samples
+# Source Documents
 
-This directory is for tiny redistributable seed documents only.
+This directory is for locally fetched source documents referenced by
+`../manifest.csv`.
 
-Examples that fit:
+The intended workflow is:
 
-- very small public-domain PDFs
-- self-authored sample PDFs created for smoke testing
-- intentionally minimized fixtures that help verify ingestion behavior
+1. keep metadata, URLs, and checksums in `../manifest.csv`
+2. fetch local copies with `python3 scripts/fetch_seed_corpus.py`
+3. let Git ignore the fetched PDFs
 
-Keep larger, licensed, or sensitive documents out of Git. Track them in
-`../manifest.csv` and store or fetch them outside the repository.
+This keeps the repository reproducible without turning Git into a dataset store.
+
+If you already fetched documents here locally, they should match the `sha256`
+values recorded in the manifest. If they do not, re-run the fetch script and let
+it refresh the file from the canonical `source_url`.
