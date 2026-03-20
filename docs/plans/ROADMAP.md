@@ -13,7 +13,7 @@ If this roadmap conflicts with implementation reality, follow:
 - Contracts index and validation flow in `docs/reference/CONTRACTS.md`
 - Executable checks in `tests/` and `docs/reference/TEST_STRATEGY.md`
 
-## Current Implementation Status (as of 2026-03-19)
+## Current Implementation Status (as of 2026-03-20)
 
 - Phase 0 (Contracts and Invariants): **Completed in repo**
   - Schemas: `schemas/query-request.schema.json`, `schemas/model-answer.schema.json`, `schemas/evidence-item.schema.json`, `schemas/query-response.schema.json`
@@ -33,10 +33,12 @@ If this roadmap conflicts with implementation reality, follow:
 - Cross-cutting operational tooling: **Implemented**
   - Read-only S3 Vectors inspector: `tools/s3_vectors_inspector/`
   - Inspector tests: `tests/test_s3_vectors_inspector.py`
-- Phase 2 (Ingestion Pipeline MVP): **Partially implemented; plumbing exists, but the gate is not yet evidenced in repo**
+- Phase 2 (Ingestion Pipeline MVP): **Completed for the text-first ingestion MVP; visual-evidence validation remains partial**
   - Manifest persistence/join layer: `provenance/manifest_store.py`, `provenance/retrieval_normalizer.py`
   - Unit tests: `tests/test_ingestion_manifest_store.py`, `tests/test_retrieval_provenance_normalizer.py`
-  - Existing scripts support single-document smoke validation and manifest upserts, but the repo does not yet contain a committed seed corpus manifest or ingestion verification artifact
+  - Seed corpus manifest, fetch flow, and shared batch-ingestion wrapper: `datasets/seed_corpus/`, `scripts/fetch_seed_corpus.py`, `scripts/run_seed_corpus_batch_ingestion.py`
+  - Committed validation artifact for 10 seed docs: `datasets/seed_corpus/reports/2026-03-19-seed-ingestion-validation.md`
+  - Remaining gap: the repo now evidences successful KB ingestion/indexing, but visual asset extraction is still not proven by the current seed validation set
 - Phases 3-7: **No phase-complete runtime implementations in repo yet**
 
 ## Planning Principles
@@ -175,6 +177,7 @@ Recommended repo layout for the seed corpus:
 
 ### Gate
 
+- Status: **Passed for the text-first ingestion MVP; visual evidence extraction/metadata still needs explicit validation**
 - At least 5 mixed documents successfully ingest end-to-end.
 - Retrieved KB items include required metadata fields for both text and visual evidence.
 
