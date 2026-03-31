@@ -35,6 +35,8 @@ class ContractFixtureTests(unittest.TestCase):
 
     def test_query_response_fixture_validates(self) -> None:
         validate_query_response(_load_json("query-response.valid.json"))
+        validate_query_response(_load_json("query-response.retrieval-unscoped.valid.json"))
+        validate_query_response(_load_json("query-response.retrieval-scoped.valid.json"))
 
     def test_model_answer_citation_integrity_matches_evidence_fixtures(self) -> None:
         model_answer = _load_json("model-answer.valid.json")
@@ -53,6 +55,28 @@ class ContractFixtureTests(unittest.TestCase):
             "limitations": query_response["limitations"],
         }
         validate_citation_integrity(model_answer_view, query_response["evidence"])
+
+        retrieval_unscoped = _load_json("query-response.retrieval-unscoped.valid.json")
+        validate_citation_integrity(
+            {
+                "answer": retrieval_unscoped["answer"],
+                "citations": retrieval_unscoped["citations"],
+                "used_evidence_ids": retrieval_unscoped["used_evidence_ids"],
+                "limitations": retrieval_unscoped["limitations"],
+            },
+            retrieval_unscoped["evidence"],
+        )
+
+        retrieval_scoped = _load_json("query-response.retrieval-scoped.valid.json")
+        validate_citation_integrity(
+            {
+                "answer": retrieval_scoped["answer"],
+                "citations": retrieval_scoped["citations"],
+                "used_evidence_ids": retrieval_scoped["used_evidence_ids"],
+                "limitations": retrieval_scoped["limitations"],
+            },
+            retrieval_scoped["evidence"],
+        )
 
 
 if __name__ == "__main__":

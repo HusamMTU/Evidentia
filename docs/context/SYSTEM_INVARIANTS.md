@@ -47,6 +47,11 @@ These are non-negotiable system laws. If implementation, plans, or prompts confl
 | OI-2 | Multi-document contribution must be measurable per request. | Schema: response `meta.docs_contributing` (when included). Code: telemetry + response metadata assembly. Tests: strategy OI-2. |
 | OI-3 | Citation validation failures must be categorized and tracked. | Schema: n/a. Code: validation error categorization/logging. Tests: strategy OI-3. |
 
+## Modality Note
+
+- File-level metadata and retrieval-candidate modality are not interchangeable.
+- In particular, `x-amz-bedrock-kb-source-file-modality` is a source-file signal; candidate normalization must prefer retrieval payload shape such as `content.type` when determining chunk modality.
+
 ## Change Control
 
 Any change affecting retrieval defaults, evidence assembly, generation constraints, citations, output contracts, or observability semantics must:

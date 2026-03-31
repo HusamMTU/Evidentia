@@ -20,13 +20,20 @@ Canonical shapes live only in `schemas/`.
 | Query request | `schemas/query-request.schema.json` | Input payload shape, scoping fields, modality hints, debug/request metadata. |
 | Model answer | `schemas/model-answer.schema.json` | Strict LLM JSON output shape before server enrichment. |
 | Evidence item | `schemas/evidence-item.schema.json` | Normalized evidence object used in API response and citation resolution. |
-| Query response | `schemas/query-response.schema.json` | Final API payload shape (model answer + evidence + optional meta). |
+| Query response | `schemas/query-response.schema.json` | Final API payload shape (model answer + evidence + optional meta, including retrieval summary/debug fields in retrieval-only mode). |
 
 ## Provenance Join Rule
 
 - Treat `evidence.asset_s3_key` as an opaque storage locator (do not parse business IDs from key shape).
 - `doc_id` must come from ingestion/retrieval provenance metadata and remain stable end-to-end.
 - For Bedrock-managed assets, key paths can omit `doc_id` (for example `aws/bedrock/knowledge_bases/<kb>/<ds>/<uuid>.png`); join logic must not depend on doc-id-in-path conventions.
+
+## Modality Semantics
+
+- Distinguish source-document modality from retrieval-candidate modality.
+- Bedrock metadata such as `x-amz-bedrock-kb-source-file-modality` describes the source file, not necessarily the specific retrieved fragment.
+- Candidate normalization should prefer retrieval payload signals such as `content.type` when deciding whether a result is text, image, row, and so on.
+- Tooling that only inspects vector metadata, such as the S3 vectors inspector, should present source-file modality explicitly and must not imply that it is query-time chunk modality.
 
 ## Validation Entry Points
 
@@ -51,6 +58,12 @@ Recommended sequence for query handling:
 6. Validate model JSON shape with `validate_model_answer`.
 7. Validate citation integrity against selected evidence IDs with `validate_citation_integrity` (or `validate_model_answer_against_evidence`).
 8. Build final API response and validate with `validate_query_response`.
+
+## Retrieval-Only API Notes
+
+- The retrieval-only query service lives at `query_api/server.py` and exposes `POST /query` plus `GET /health`.
+- Successful responses may include `meta.retrieval_summary` even when request debug mode is off.
+- When request `debug=true`, responses may also include `meta.retrieval_debug` with ranked candidate summaries, normalized metadata, and drop reasons.
 
 ## Change Workflow
 
