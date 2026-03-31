@@ -4,6 +4,7 @@ const state = {
   selectedKey: null,
   selectedVector: null,
   similarResults: null,
+  retrieveDebug: null,
   loadedConfig: null,
   vectorBuckets: [],
   indexes: [],
@@ -183,7 +184,7 @@ function filteredRows() {
     return [
       row.key,
       row.data_source_id,
-      row.modality,
+      row.source_file_modality,
       row.source_uri,
       row.text_preview,
       row.mime_type,
@@ -238,7 +239,7 @@ function renderRows() {
     tr.innerHTML = `
       <td class="row-key">${escapeHtml(row.key || "")}</td>
       <td>${badgeMarkup(row.data_source_id || "<missing>", dsVariant)}</td>
-      <td>${badgeMarkup(row.modality || "<missing>", "muted")}</td>
+      <td>${badgeMarkup(row.source_file_modality || "<missing>", "muted")}</td>
       <td>${escapeHtml(row.page_number || "—")}</td>
       <td><span class="source-linkish" title="${escapeHtml(row.source_uri || "")}">${escapeHtml(compactText(row.source_uri || "—", 72))}</span></td>
       <td><span class="preview-text" title="${escapeHtml(previewLabel(row))}">${escapeHtml(compactText(previewLabel(row), 110))}</span></td>
@@ -305,6 +306,7 @@ function renderSelection() {
   const dimension = vectorDimension(state.selectedVector);
   const cards = [
     ["Related Assets", String(summary.related_asset_count || 0)],
+    ["Source File Modality", summary.source_file_modality || "Unknown"],
     ["Text Length", summary.text_length ? `${summary.text_length} chars` : "None stored"],
     ["Vector Dimension", dimension ? `${dimension} float32 values` : "Not loaded"],
   ];
@@ -350,7 +352,7 @@ function renderSimilarityResults() {
         <tr>
           <th>Key</th>
           <th>Distance</th>
-          <th>Modality</th>
+          <th>Source File Modality</th>
           <th>Page</th>
           <th>Source</th>
           <th>Preview</th>
@@ -375,7 +377,7 @@ function renderSimilarityResults() {
                   ${badges.length ? `<div style="margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;">${badges.join("")}</div>` : ""}
                 </td>
                 <td>${escapeHtml(Number(match.distance || 0).toFixed(6))}</td>
-                <td>${escapeHtml(summary.modality || "—")}</td>
+                <td>${escapeHtml(summary.source_file_modality || "—")}</td>
                 <td>${escapeHtml(summary.page_number || "—")}</td>
                 <td><span class="source-linkish" title="${escapeHtml(summary.source_uri || "")}">${escapeHtml(compactText(summary.source_uri || "—", 68))}</span></td>
                 <td><span class="preview-text" title="${escapeHtml(previewLabel(summary))}">${escapeHtml(compactText(previewLabel(summary), 110))}</span></td>
@@ -387,6 +389,98 @@ function renderSimilarityResults() {
     </table>
   `;
   raw.textContent = toPretty(state.similarResults);
+}
+
+function retrievePreviewLabel(row) {
+  if (row.text_preview) {
+    return row.text_preview;
+  }
+  if (row.description_preview) {
+    return row.description_preview;
+  }
+  if (row.has_byte_content) {
+    return `Byte content returned${row.byte_content_mime_type ? ` (${row.byte_content_mime_type})` : ""}`;
+  }
+  return "No preview returned";
+}
+
+function renderRetrieveDebug() {
+  const countBadge = $("retrieve_result_count_badge");
+  const tokenBadge = $("retrieve_next_token_badge");
+  const resolverBadge = $("retrieve_doc_resolution_badge");
+  const container = $("retrieve_results_table");
+  const raw = $("retrieve_results_raw");
+
+  if (!state.retrieveDebug) {
+    countBadge.textContent = "No retrieve run yet";
+    tokenBadge.textContent = "Next token unavailable";
+    resolverBadge.textContent = "Doc ID resolution unavailable";
+    container.innerHTML = '<div class="empty-state">Run Bedrock Retrieve to inspect query-time content type, source file modality, and provenance hints.</div>';
+    raw.textContent = "";
+    return;
+  }
+
+  const rows = state.retrieveDebug.rows || [];
+  countBadge.textContent = `${rows.length} retrieved result${rows.length === 1 ? "" : "s"}`;
+  tokenBadge.textContent = state.retrieveDebug.next_token ? "Next token available" : "Next token unavailable";
+  resolverBadge.textContent = state.retrieveDebug.doc_id_resolution_enabled
+    ? `Doc ID resolution: ${state.retrieveDebug.summary?.resolved_doc_count || 0}`
+    : "Doc ID resolution unavailable";
+
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty-state">Retrieve returned no results for this query.</div>';
+    raw.textContent = toPretty(state.retrieveDebug.raw_response || state.retrieveDebug);
+    return;
+  }
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Score</th>
+          <th>Content Type</th>
+          <th>Source File Modality</th>
+          <th>Doc / Chunk</th>
+          <th>Asset</th>
+          <th>Source</th>
+          <th>Preview</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows
+          .map((row) => {
+            const docChunk = [
+              row.doc_id || "—",
+              row.chunk_id ? `chunk ${row.chunk_id}` : null,
+            ]
+              .filter(Boolean)
+              .join(" • ");
+            const assetLabel = [
+              row.asset_id || null,
+              row.page_number ? `p.${row.page_number}` : null,
+            ]
+              .filter(Boolean)
+              .join(" • ");
+            const sourceLabel = row.asset_source_uri || row.source_uri || "—";
+            return `
+              <tr>
+                <td>${escapeHtml(row.rank || "—")}</td>
+                <td>${escapeHtml(row.score != null ? Number(row.score).toFixed(6) : "—")}</td>
+                <td>${badgeMarkup(row.content_type || "<missing>", "muted")}</td>
+                <td>${badgeMarkup(row.source_file_modality || "<missing>", "muted")}</td>
+                <td><span class="preview-text" title="${escapeHtml(docChunk || "—")}">${escapeHtml(compactText(docChunk || "—", 56))}</span></td>
+                <td><span class="preview-text" title="${escapeHtml(assetLabel || "—")}">${escapeHtml(compactText(assetLabel || "—", 56))}</span></td>
+                <td><span class="source-linkish" title="${escapeHtml(sourceLabel)}">${escapeHtml(compactText(sourceLabel, 72))}</span></td>
+                <td><span class="preview-text" title="${escapeHtml(retrievePreviewLabel(row))}">${escapeHtml(compactText(retrievePreviewLabel(row), 120))}</span></td>
+              </tr>
+            `;
+          })
+          .join("")}
+      </tbody>
+    </table>
+  `;
+  raw.textContent = toPretty(state.retrieveDebug.raw_response || state.retrieveDebug);
 }
 
 function summaryItemsMarkup(counts, { currentKey = "", highlightHistorical = false } = {}) {
@@ -436,7 +530,7 @@ function renderSummary() {
     currentKey: summary?.current_data_source_id || currentDataSourceId(),
     highlightHistorical: true,
   });
-  $("modality_summary").innerHTML = summaryItemsMarkup(summary?.modality_counts);
+  $("modality_summary").innerHTML = summaryItemsMarkup(summary?.source_file_modality_counts);
 }
 
 async function loadDefaultConfig() {
@@ -670,6 +764,33 @@ async function querySimilar() {
   }
 }
 
+async function runRetrieveDebug() {
+  const query = $("retrieve_query").value.trim();
+  if (!query) {
+    setStatus("Enter a query before running Bedrock Retrieve.", "warn");
+    return;
+  }
+  const region = $("region").value.trim();
+  if (!region) {
+    setStatus("Choose a region before running Bedrock Retrieve.", "warn");
+    return;
+  }
+
+  try {
+    setStatus("Running Bedrock Retrieve debug query...", "info");
+    const data = await apiGet("/api/retrieve-debug", {
+      region,
+      query,
+      top_k: $("retrieve_top_k").value,
+    });
+    state.retrieveDebug = data;
+    renderRetrieveDebug();
+    setStatus("Retrieve debug query complete.", "success");
+  } catch (err) {
+    setStatus(err.message, "error");
+  }
+}
+
 async function refreshSummary(options = {}) {
   const { silent = false, raiseOnError = true } = options;
 
@@ -739,6 +860,7 @@ function invalidateLoadedStateIfConfigChanged() {
   state.selectedKey = null;
   state.selectedVector = null;
   state.similarResults = null;
+  state.retrieveDebug = null;
   state.summary = null;
   state.indexDetails = null;
   state.loadedConfig = null;
@@ -746,6 +868,7 @@ function invalidateLoadedStateIfConfigChanged() {
 
   renderRows();
   renderSelection();
+  renderRetrieveDebug();
   renderSummary();
   renderPageState();
   setStatus("Config changed. Reload vectors to inspect the new index.", "warn");
@@ -756,6 +879,7 @@ function bindEvents() {
   $("load_vectors").addEventListener("click", () => loadVectors(true));
   $("load_more").addEventListener("click", () => loadVectors(false));
   $("find_similar").addEventListener("click", querySimilar);
+  $("run_retrieve_debug").addEventListener("click", runRetrieveDebug);
   $("search").addEventListener("input", renderRows);
   $("similarity_key").addEventListener("input", () => {
     state.similarResults = null;
@@ -765,6 +889,16 @@ function bindEvents() {
     if (event.key === "Enter") {
       event.preventDefault();
       querySimilar();
+    }
+  });
+  $("retrieve_query").addEventListener("input", () => {
+    state.retrieveDebug = null;
+    renderRetrieveDebug();
+  });
+  $("retrieve_query").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runRetrieveDebug();
     }
   });
   $("vector_bucket_name").addEventListener("change", refreshIndexesForBucket);
@@ -783,6 +917,7 @@ async function init() {
   renderPageState();
   renderContext();
   renderSelection();
+  renderRetrieveDebug();
   renderSummary();
 
   await loadDefaultConfig();

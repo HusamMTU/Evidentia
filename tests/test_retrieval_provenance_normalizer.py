@@ -60,7 +60,43 @@ class RetrievalProvenanceNormalizerTests(unittest.TestCase):
         self.assertNotIn("doc_id", normalized)
         self.assertEqual(normalized["metadata"]["source_uri"], "s3://raw/documents-raw/missing/source.pdf")
 
+    def test_preserves_asset_source_uri_and_asset_key_without_affecting_doc_resolution(self) -> None:
+        resolver = _Resolver({"s3://raw/documents-raw/doc-3/source.pdf": "doc-3"})
+        candidate = {
+            "location": {"s3Location": {"uri": "s3://raw/documents-raw/doc-3/source.pdf"}},
+            "metadata": {
+                "x-amz-bedrock-kb-byte-content-source": (
+                    "s3://assets/aws/bedrock/knowledge_bases/KB123/DS456/asset-1.png"
+                )
+            },
+        }
+
+        normalized = normalize_retrieval_candidate_doc_id(candidate, resolver=resolver, strict=True)
+
+        self.assertEqual(normalized["doc_id"], "doc-3")
+        self.assertEqual(normalized["metadata"]["source_uri"], "s3://raw/documents-raw/doc-3/source.pdf")
+        self.assertEqual(
+            normalized["metadata"]["asset_source_uri"],
+            "s3://assets/aws/bedrock/knowledge_bases/KB123/DS456/asset-1.png",
+        )
+        self.assertEqual(
+            normalized["metadata"]["asset_s3_key"],
+            "aws/bedrock/knowledge_bases/KB123/DS456/asset-1.png",
+        )
+
+    def test_normalizes_source_file_modality_into_stable_metadata_field(self) -> None:
+        resolver = _Resolver({"s3://raw/documents-raw/doc-4/source.pdf": "doc-4"})
+        candidate = {
+            "metadata": {
+                "source_uri": "s3://raw/documents-raw/doc-4/source.pdf",
+                "x-amz-bedrock-kb-source-file-modality": "text",
+            }
+        }
+
+        normalized = normalize_retrieval_candidate_doc_id(candidate, resolver=resolver, strict=True)
+
+        self.assertEqual(normalized["metadata"]["source_file_modality"], "TEXT")
+
 
 if __name__ == "__main__":
     unittest.main()
-

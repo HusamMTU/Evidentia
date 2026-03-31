@@ -13,7 +13,7 @@ If this roadmap conflicts with implementation reality, follow:
 - Contracts index and validation flow in `docs/reference/CONTRACTS.md`
 - Executable checks in `tests/` and `docs/reference/TEST_STRATEGY.md`
 
-## Current Implementation Status (as of 2026-03-20)
+## Current Implementation Status (as of 2026-03-31)
 
 - Phase 0 (Contracts and Invariants): **Completed in repo**
   - Schemas: `schemas/query-request.schema.json`, `schemas/model-answer.schema.json`, `schemas/evidence-item.schema.json`, `schemas/query-response.schema.json`
@@ -39,7 +39,12 @@ If this roadmap conflicts with implementation reality, follow:
   - Seed corpus manifest, fetch flow, and shared batch-ingestion wrapper: `datasets/seed_corpus/`, `scripts/fetch_seed_corpus.py`, `scripts/run_seed_corpus_batch_ingestion.py`
   - Committed validation artifact for 10 seed docs: `datasets/seed_corpus/reports/2026-03-19-seed-ingestion-validation.md`
   - Remaining gap: the repo now evidences successful KB ingestion/indexing, but visual asset extraction is still not proven by the current seed validation set
-- Phases 3-7: **No phase-complete runtime implementations in repo yet**
+- Phase 3 (Retrieval API): **Completed for the retrieval-only API slice in repo**
+  - Retrieval-only query handler and Bedrock adapter: `query_api/query_handler.py`
+  - Minimal HTTP service surface: `query_api/server.py` (`GET /health`, `POST /query`)
+  - Query handler + server tests: `tests/test_query_handler.py`, `tests/test_query_server.py`
+  - Current slice validates request/response contracts, preserves unscoped-by-default behavior, supports explicit scoping, returns schema-valid evidence-only responses, and exposes retrieval summary/debug metadata
+- Phases 4-7: **No phase-complete runtime implementations in repo yet**
 
 ## Planning Principles
 
@@ -211,6 +216,7 @@ Goal: Expose a query endpoint that performs multi-document retrieval by default.
 
 ### Gate
 
+- Status: **Passed for the retrieval-only API slice in repo**
 - Same query returns candidates from multiple `doc_id`s when relevant.
 - Scoped query filters correctly to requested docs only.
 - Retrieval behavior is deterministic for identical inputs/config.

@@ -73,7 +73,7 @@
           <div class="panel-head">
             <div>
               <h2>Vectors</h2>
-              <p class="panel-note">Select one to inspect full payload or seed a similarity query.</p>
+              <p class="panel-note">Select one to inspect full payload or seed a similarity query. Source file modality shown here comes from vector metadata, not Bedrock Retrieve chunk content.</p>
             </div>
             <div class="list-tools">
               <div class="pill subtle" id="page_state">No vectors loaded</div>
@@ -86,7 +86,7 @@
                 <tr>
                   <th>Key</th>
                   <th>Data Source</th>
-                  <th>Modality</th>
+                  <th>Source File Modality</th>
                   <th>Page</th>
                   <th>Source</th>
                   <th>Preview</th>
@@ -166,6 +166,39 @@
         </details>
       </section>
 
+      <section class="panel similarity-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Retrieve Debug</h2>
+            <p class="panel-note">Runs Bedrock <code>Retrieve</code> against the configured knowledge base and shows query-time content type next to source file modality.</p>
+          </div>
+        </div>
+
+        <div class="similarity-toolbar">
+          <label class="similarity-key-field">
+            Query
+            <input id="retrieve_query" type="text" placeholder="Ask a retrieval-only question" />
+          </label>
+          <label class="compact-field">
+            Top K
+            <input id="retrieve_top_k" type="number" min="1" max="100" value="8" />
+          </label>
+          <button id="run_retrieve_debug" class="secondary">Run Retrieve</button>
+        </div>
+
+        <div class="similarity-meta">
+          <div class="pill subtle" id="retrieve_result_count_badge">No retrieve run yet</div>
+          <div class="pill subtle" id="retrieve_next_token_badge">Next token unavailable</div>
+          <div class="pill subtle" id="retrieve_doc_resolution_badge">Doc ID resolution unavailable</div>
+        </div>
+
+        <div id="retrieve_results_table" class="subpanel"></div>
+        <details>
+          <summary>Raw Retrieve JSON</summary>
+          <pre id="retrieve_results_raw" class="json"></pre>
+        </details>
+      </section>
+
       <section class="panel summary-panel">
         <div class="panel-head summary-head">
           <div>
@@ -183,7 +216,7 @@
             <div id="data_source_summary" class="summary-list"></div>
           </section>
           <section class="summary-block">
-            <h3>Modalities</h3>
+            <h3>Source File Modalities</h3>
             <div id="modality_summary" class="summary-list"></div>
           </section>
         </div>

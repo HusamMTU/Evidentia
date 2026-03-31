@@ -96,6 +96,271 @@
         },
         "insufficient_evidence": {
           "type": "boolean"
+        },
+        "retrieval_summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retrieved_candidates",
+            "returned_evidence",
+            "dropped_candidates",
+            "filtered_out_of_scope",
+            "pages_fetched",
+            "doc_distribution",
+            "candidate_content_type_counts",
+            "source_file_modality_counts"
+          ],
+          "properties": {
+            "retrieved_candidates": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_evidence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dropped_candidates": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "filtered_out_of_scope": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pages_fetched": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "doc_distribution": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "candidate_content_type_counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "source_file_modality_counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "retrieval_debug": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retrieved_candidates",
+            "returned_evidence",
+            "dropped_candidates",
+            "filtered_out_of_scope",
+            "pages_fetched",
+            "doc_distribution",
+            "candidate_content_type_counts",
+            "source_file_modality_counts",
+            "candidates",
+            "drop_reasons"
+          ],
+          "properties": {
+            "retrieved_candidates": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_evidence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dropped_candidates": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "filtered_out_of_scope": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pages_fetched": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "drop_reasons": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "candidate_index",
+                  "reason",
+                  "detail"
+                ],
+                "properties": {
+                  "candidate_index": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "detail": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "doc_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "source_uri": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "asset_type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "candidate_content_type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "source_file_modality": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "asset_source_uri": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "score": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            },
+            "doc_distribution": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "candidate_content_type_counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "source_file_modality_counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "rank",
+                  "dropped",
+                  "metadata"
+                ],
+                "properties": {
+                  "rank": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "dropped": {
+                    "type": "boolean"
+                  },
+                  "drop_reason": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "score": {
+                    "type": "number"
+                  },
+                  "doc_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source_uri": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "asset_source_uri": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "candidate_content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source_file_modality": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "asset_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "chunk_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "asset_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "text_preview": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description_preview": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

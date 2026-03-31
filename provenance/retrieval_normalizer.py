@@ -82,6 +82,53 @@ def _extract_source_provenance(candidate: Mapping[str, Any]) -> tuple[str | None
     return source_uri, source_bucket, source_key
 
 
+def _extract_asset_source_uri(candidate: Mapping[str, Any]) -> str | None:
+    metadata = candidate.get("metadata")
+    metadata_map = metadata if isinstance(metadata, Mapping) else {}
+
+    return _first_non_empty(
+        [
+            metadata_map.get("asset_source_uri"),
+            metadata_map.get("asset_s3_uri"),
+            metadata_map.get("assetS3Uri"),
+            metadata_map.get("supplemental_uri"),
+            metadata_map.get("supplementalUri"),
+            metadata_map.get("x-amz-bedrock-kb-byte-content-source"),
+            candidate.get("asset_source_uri"),
+            candidate.get("asset_s3_uri"),
+            candidate.get("assetS3Uri"),
+            candidate.get("supplemental_uri"),
+            candidate.get("supplementalUri"),
+        ]
+    )
+
+
+def _s3_uri_to_key(s3_uri: str | None) -> str | None:
+    if s3_uri is None or not s3_uri.startswith("s3://"):
+        return None
+    _, _, remainder = s3_uri.partition("s3://")
+    bucket_sep = remainder.find("/")
+    if bucket_sep == -1:
+        return None
+    key = remainder[bucket_sep + 1 :].strip()
+    return key or None
+
+
+def _normalize_source_file_modality(candidate: Mapping[str, Any]) -> str | None:
+    metadata = candidate.get("metadata")
+    metadata_map = metadata if isinstance(metadata, Mapping) else {}
+    value = _first_non_empty(
+        [
+            metadata_map.get("source_file_modality"),
+            metadata_map.get("sourceFileModality"),
+            metadata_map.get("x-amz-bedrock-kb-source-file-modality"),
+        ]
+    )
+    if value is None:
+        return None
+    return value.strip().upper()
+
+
 def normalize_retrieval_candidate_doc_id(
     candidate: Mapping[str, Any],
     *,
@@ -116,6 +163,17 @@ def normalize_retrieval_candidate_doc_id(
     if source_uri is not None:
         metadata_map["source_uri"] = source_uri
 
+    asset_source_uri = _extract_asset_source_uri(candidate)
+    if asset_source_uri is not None:
+        metadata_map["asset_source_uri"] = asset_source_uri
+        metadata_map.setdefault("asset_s3_uri", asset_source_uri)
+        asset_s3_key = _s3_uri_to_key(asset_source_uri)
+        if asset_s3_key is not None:
+            metadata_map.setdefault("asset_s3_key", asset_s3_key)
+
+    source_file_modality = _normalize_source_file_modality(candidate)
+    if source_file_modality is not None:
+        metadata_map["source_file_modality"] = source_file_modality
+
     normalized["metadata"] = metadata_map
     return normalized
-

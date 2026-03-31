@@ -5,18 +5,40 @@ import json
 import unittest
 
 from tools.s3_vectors_inspector.inspector import (
+    BedrockRetrieveInspectorClient,
     InspectorConfigError,
     InspectorConfig,
+    RetrieveInspectorConfigError,
     S3VectorsInspectorClient,
     build_config,
     build_env_context,
     parse_index_arn,
     parse_vector_bucket_name,
     resolve_config_defaults,
+    summarize_retrieve_response,
+    summarize_retrieval_result,
     summarize_by_data_source,
     summarize_vector,
 )
 from tools.s3_vectors_inspector.server import _json_compatible
+
+
+class _Resolver:
+    def __init__(self, mapping: dict[str, str]) -> None:
+        self.mapping = mapping
+
+    def resolve_doc_id(
+        self,
+        *,
+        source_uri: str | None = None,
+        source_bucket: str | None = None,
+        source_key: str | None = None,
+    ) -> str | None:
+        if source_uri:
+            return self.mapping.get(source_uri)
+        if source_bucket and source_key:
+            return self.mapping.get(f"s3://{source_bucket}/{source_key}")
+        return None
 
 
 class S3VectorsInspectorTests(unittest.TestCase):
@@ -91,6 +113,7 @@ class S3VectorsInspectorTests(unittest.TestCase):
         self.assertEqual(summary["data_source_id"], "DS1")
         self.assertEqual(summary["text_length"], len("A short body of text"))
         self.assertEqual(summary["related_content_types"]["S3"], 1)
+        self.assertEqual(summary["source_file_modality"], "TEXT")
 
     def test_summarize_vector_marks_current_data_source(self) -> None:
         vector = {
@@ -103,6 +126,17 @@ class S3VectorsInspectorTests(unittest.TestCase):
         summary = summarize_vector(vector, current_data_source_id="CURRENT")
         self.assertTrue(summary["is_current_data_source"])
 
+    def test_summarize_vector_coerces_page_number_from_float_metadata(self) -> None:
+        vector = {
+            "key": "vec-1",
+            "metadata": {
+                "x-amz-bedrock-kb-document-page-number": 7.0,
+            },
+        }
+
+        summary = summarize_vector(vector)
+        self.assertEqual(summary["page_number"], 7)
+
     def test_summarize_by_data_source_counts(self) -> None:
         vectors = [
             {"metadata": {"x-amz-bedrock-kb-data-source-id": "A", "x-amz-bedrock-kb-source-file-modality": "TEXT"}},
@@ -112,8 +146,8 @@ class S3VectorsInspectorTests(unittest.TestCase):
         summary = summarize_by_data_source(vectors, current_data_source_id="A")
         self.assertEqual(summary["data_source_counts"]["A"], 2)
         self.assertEqual(summary["data_source_counts"]["B"], 1)
-        self.assertEqual(summary["modality_counts"]["TEXT"], 2)
-        self.assertEqual(summary["modality_counts"]["IMAGE"], 1)
+        self.assertEqual(summary["source_file_modality_counts"]["TEXT"], 2)
+        self.assertEqual(summary["source_file_modality_counts"]["IMAGE"], 1)
         self.assertEqual(summary["current_data_source_vector_count"], 2)
         self.assertEqual(summary["historical_data_source_ids"], ["B"])
         self.assertEqual(summary["historical_data_source_vector_count"], 1)
@@ -146,6 +180,125 @@ class S3VectorsInspectorTests(unittest.TestCase):
             boto_client.kwargs,
             {"vectorBucketName": "vb", "indexName": "idx"},
         )
+
+    def test_summarize_retrieval_result_preserves_chunk_and_source_modality(self) -> None:
+        result = {
+            "content": {"type": "TEXT", "text": "Transformer details live here."},
+            "location": {"s3Location": {"uri": "s3://raw/documents-raw/doc-a/source.pdf"}},
+            "metadata": {
+                "x-amz-bedrock-kb-source-file-modality": "TEXT",
+                "x-amz-bedrock-kb-chunk-id": "chunk-a-1",
+                "x-amz-bedrock-kb-document-page-number": 5.0,
+            },
+            "score": 0.91,
+        }
+        resolver = _Resolver({"s3://raw/documents-raw/doc-a/source.pdf": "doc-a"})
+
+        summary = summarize_retrieval_result(result, rank=1, provenance_resolver=resolver)
+
+        self.assertEqual(summary["content_type"], "TEXT")
+        self.assertEqual(summary["source_file_modality"], "TEXT")
+        self.assertEqual(summary["doc_id"], "doc-a")
+        self.assertEqual(summary["chunk_id"], "chunk-a-1")
+        self.assertEqual(summary["page_number"], 5)
+        self.assertEqual(summary["text_preview"], "Transformer details live here.")
+
+    def test_summarize_retrieval_result_handles_image_from_text_source_pdf(self) -> None:
+        result = {
+            "content": {"type": "IMAGE", "byteContent": "data:image/png;base64,ZmFrZQ=="},
+            "location": {"s3Location": {"uri": "s3://raw/documents-raw/doc-v/source.pdf"}},
+            "metadata": {
+                "x-amz-bedrock-kb-source-file-modality": "TEXT",
+                "x-amz-bedrock-kb-byte-content-source": (
+                    "s3://assets/aws/bedrock/knowledge_bases/KB123/DS456/asset-1.png"
+                ),
+                "x-amz-bedrock-kb-description": "Table 2 compares model quality.",
+                "x-amz-bedrock-kb-document-page-number": 7.0,
+            },
+            "score": 0.74,
+        }
+        resolver = _Resolver({"s3://raw/documents-raw/doc-v/source.pdf": "doc-v"})
+
+        summary = summarize_retrieval_result(result, rank=2, provenance_resolver=resolver)
+
+        self.assertEqual(summary["content_type"], "IMAGE")
+        self.assertEqual(summary["source_file_modality"], "TEXT")
+        self.assertEqual(summary["doc_id"], "doc-v")
+        self.assertEqual(
+            summary["asset_source_uri"],
+            "s3://assets/aws/bedrock/knowledge_bases/KB123/DS456/asset-1.png",
+        )
+        self.assertEqual(
+            summary["asset_s3_key"],
+            "aws/bedrock/knowledge_bases/KB123/DS456/asset-1.png",
+        )
+        self.assertEqual(summary["asset_id"], "asset-1")
+        self.assertTrue(summary["has_byte_content"])
+        self.assertEqual(summary["byte_content_mime_type"], "image/png")
+        self.assertEqual(summary["description_preview"], "Table 2 compares model quality.")
+        self.assertEqual(summary["page_number"], 7)
+
+    def test_summarize_retrieve_response_counts_content_and_source_modality(self) -> None:
+        response = {
+            "retrievalResults": [
+                {
+                    "content": {"type": "TEXT", "text": "A"},
+                    "metadata": {"x-amz-bedrock-kb-source-file-modality": "TEXT"},
+                },
+                {
+                    "content": {"type": "IMAGE", "byteContent": "data:image/png;base64,ZmFrZQ=="},
+                    "metadata": {"x-amz-bedrock-kb-source-file-modality": "TEXT"},
+                },
+            ],
+            "nextToken": "page-2",
+        }
+
+        summarized = summarize_retrieve_response(response)
+
+        self.assertEqual(summarized["summary"]["retrieved_result_count"], 2)
+        self.assertEqual(summarized["summary"]["content_type_counts"]["TEXT"], 1)
+        self.assertEqual(summarized["summary"]["content_type_counts"]["IMAGE"], 1)
+        self.assertEqual(summarized["summary"]["source_file_modality_counts"]["TEXT"], 2)
+        self.assertEqual(summarized["next_token"], "page-2")
+
+    def test_bedrock_retrieve_client_builds_request(self) -> None:
+        class DummyBotoClient:
+            def retrieve(self, **kwargs):
+                self.kwargs = kwargs
+                return {"retrievalResults": [], "nextToken": "page-2"}
+
+        boto_client = DummyBotoClient()
+        client = BedrockRetrieveInspectorClient(
+            knowledge_base_id="KB123",
+            region="us-east-1",
+            boto_client=boto_client,
+        )
+
+        response = client.retrieve(
+            query_text="Compare the main transformer contributions.",
+            top_k=6,
+            next_token="page-1",
+            override_search_type="SEMANTIC",
+        )
+
+        self.assertEqual(response["nextToken"], "page-2")
+        self.assertEqual(boto_client.kwargs["knowledgeBaseId"], "KB123")
+        self.assertEqual(boto_client.kwargs["retrievalQuery"], {"text": "Compare the main transformer contributions."})
+        self.assertEqual(
+            boto_client.kwargs["retrievalConfiguration"]["vectorSearchConfiguration"]["numberOfResults"],
+            6,
+        )
+        self.assertEqual(
+            boto_client.kwargs["retrievalConfiguration"]["vectorSearchConfiguration"]["overrideSearchType"],
+            "SEMANTIC",
+        )
+        self.assertEqual(boto_client.kwargs["nextToken"], "page-1")
+
+    def test_bedrock_retrieve_client_requires_kb_and_region(self) -> None:
+        with self.assertRaises(RetrieveInspectorConfigError):
+            BedrockRetrieveInspectorClient(knowledge_base_id="", region="us-east-1", boto_client=object())
+        with self.assertRaises(RetrieveInspectorConfigError):
+            BedrockRetrieveInspectorClient(knowledge_base_id="KB123", region="", boto_client=object())
 
 
 if __name__ == "__main__":

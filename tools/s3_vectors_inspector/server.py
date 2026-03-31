@@ -19,12 +19,15 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tools.s3_vectors_inspector.inspector import (
+    BedrockRetrieveInspectorClient,
     InspectorConfigError,
+    RetrieveInspectorConfigError,
     S3VectorsInspectorClient,
     build_config,
     build_env_context,
     parse_bedrock_metadata,
     resolve_config_defaults,
+    summarize_retrieve_response,
     summarize_by_data_source,
     summarize_vector,
 )
@@ -142,11 +145,16 @@ class InspectorHandler(BaseHTTPRequestHandler):
             if path == "/api/query-by-key":
                 self._handle_query_by_key(params)
                 return
+            if path == "/api/retrieve-debug":
+                self._handle_retrieve_debug(params)
+                return
             if path == "/api/data-source-summary":
                 self._handle_data_source_summary(params)
                 return
             self._json({"error": f"Unknown API path: {path}"}, status=HTTPStatus.NOT_FOUND)
         except InspectorConfigError as exc:
+            self._json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        except RetrieveInspectorConfigError as exc:
             self._json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         except KeyError as exc:
             self._json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
@@ -178,6 +186,37 @@ class InspectorHandler(BaseHTTPRequestHandler):
 
     def _client_from_params(self, params: dict[str, list[str]]) -> S3VectorsInspectorClient:
         return S3VectorsInspectorClient.from_config(self._build_config_from_params(params))
+
+    def _region_from_params_or_env(self, params: dict[str, list[str]]) -> str:
+        region = _first_value(params, "region") or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+        if not region:
+            raise InspectorConfigError("Missing region. Set AWS_REGION/AWS_DEFAULT_REGION or pass region.")
+        return region
+
+    def _knowledge_base_id_from_params_or_env(self, params: dict[str, list[str]]) -> str:
+        knowledge_base_id = _first_value(params, "knowledge_base_id") or os.getenv("BEDROCK_KNOWLEDGE_BASE_ID")
+        if not knowledge_base_id:
+            raise RetrieveInspectorConfigError(
+                "Missing knowledge base ID. Set BEDROCK_KNOWLEDGE_BASE_ID or pass knowledge_base_id."
+            )
+        return knowledge_base_id
+
+    def _optional_provenance_resolver(self, *, region: str):
+        table_name = os.getenv("EVIDENTIA_INGESTION_MANIFEST_TABLE_NAME", "").strip()
+        if not table_name:
+            return None
+
+        index_name = os.getenv("EVIDENTIA_INGESTION_MANIFEST_SOURCE_URI_INDEX", "").strip()
+        try:
+            from provenance import DynamoIngestionManifestStore, SOURCE_URI_INDEX_NAME
+        except ImportError:  # pragma: no cover - repo wiring dependent
+            return None
+
+        return DynamoIngestionManifestStore(
+            table_name,
+            region_name=region,
+            source_uri_index_name=index_name or SOURCE_URI_INDEX_NAME,
+        )
 
     def _s3vectors_boto_client(self, *, region: str):
         try:
@@ -341,6 +380,43 @@ class InspectorHandler(BaseHTTPRequestHandler):
                     }
                     for match in matches
                 ],
+            }
+        )
+
+    def _handle_retrieve_debug(self, params: dict[str, list[str]]) -> None:
+        region = self._region_from_params_or_env(params)
+        knowledge_base_id = self._knowledge_base_id_from_params_or_env(params)
+        query_text = _first_value(params, "query")
+        if not query_text:
+            raise ValueError("Missing required query parameter: query")
+
+        top_k = _parse_int(_first_value(params, "top_k"), default=8, minimum=1, maximum=100)
+        next_token = _first_value(params, "next_token")
+        override_search_type = _first_value(params, "override_search_type")
+
+        client = BedrockRetrieveInspectorClient.from_runtime(
+            knowledge_base_id=knowledge_base_id,
+            region=region,
+        )
+        provenance_resolver = self._optional_provenance_resolver(region=region)
+        response = client.retrieve(
+            query_text=query_text,
+            top_k=top_k,
+            next_token=next_token,
+            override_search_type=override_search_type,
+        )
+        summarized = summarize_retrieve_response(response, provenance_resolver=provenance_resolver)
+        self._json(
+            {
+                "region": region,
+                "knowledge_base_id": knowledge_base_id,
+                "query": query_text,
+                "top_k": top_k,
+                "doc_id_resolution_enabled": provenance_resolver is not None,
+                "rows": summarized["rows"],
+                "summary": summarized["summary"],
+                "next_token": summarized["next_token"],
+                "raw_response": response,
             }
         )
 
